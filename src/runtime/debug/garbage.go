@@ -87,7 +87,10 @@ func ReadGCStats(stats *GCStats) {
 // SetGCPercent returns the previous setting.
 // The initial setting is the value of the GOGC environment variable
 // at startup, or 100 if the variable is not set.
-// A negative percentage disables garbage collection.
+// A negative percentage disables triggering garbage collection
+// based on the ratio of fresh allocation to previously live heap.
+// However, GC can still be explicitly triggered by runtime.GC and
+// similar functions, or by the maximum heap size set by SetMaxHeap.
 func SetGCPercent(percent int) int {
 	return int(setGCPercent(int32(percent)))
 }
@@ -166,3 +169,114 @@ func WriteHeapDump(fd uintptr)
 // If SetTraceback is called with a level lower than that of the
 // environment variable, the call is ignored.
 func SetTraceback(level string)
+
+// GCPolicy reports the garbage collector's policy for controlling the
+// heap size and scheduling garbage collection work.
+type GCPolicy struct {
+	// GCPercent is the current value of GOGC, as set by the GOGC
+	// environment variable or SetGCPercent.
+	//
+	// If triggering GC by relative heap growth is disabled, this
+	// will be -1.
+	GCPercent int
+
+	// MaxHeapBytes is the current soft heap limit set by
+	// SetMaxHeap, in bytes.
+	//
+	// If there is no heap limit set, this will be ^uintptr(0).
+	MaxHeapBytes uintptr
+
+	// AvailGCPercent is the heap space available for allocation
+	// before the next GC, as a percent of the heap used at the
+	// end of the previous garbage collection. It measures memory
+	// pressure and how hard the garbage collector must work to
+	// achieve the heap size goals set by GCPercent and
+	// MaxHeapBytes.
+	//
+	// For example, if AvailGCPercent is 100, then at the end of
+	// the previous garbage collection, the space available for
+	// allocation before the next GC was the same as the space
+	// used. If AvailGCPercent is 20, then the space available is
+	// only a 20% of the space used.
+	//
+	// AvailGCPercent is directly comparable with GCPercent.
+	//
+	// If AvailGCPercent >= GCPercent, the garbage collector is
+	// not under pressure and can amortize the cost of garbage
+	// collection by allowing the heap to grow in proportion to
+	// how much is used.
+	//
+	// If AvailGCPercent < GCPercent, the garbage collector is
+	// under pressure and must run more frequently to keep the
+	// heap size under MaxHeapBytes. Smaller values of
+	// AvailGCPercent indicate greater pressure. In this case, the
+	// application should shed load and reduce its live heap size
+	// to relieve memory pressure.
+	//
+	// AvailGCPercent is always >= 0.
+	AvailGCPercent int
+}
+
+// SetMaxHeap sets a soft limit on the size of the Go heap and returns
+// the previous setting. By default, there is no limit.
+//
+// If a max heap is set, the garbage collector will endeavor to keep
+// the heap size under the specified size, even if this is lower than
+// would normally be determined by GOGC (see SetGCPercent).
+//
+// Whenever the garbage collector's scheduling policy changes as a
+// result of this heap limit (that is, the result that would be
+// returned by ReadGCPolicy changes), the garbage collector will send
+// to the notify channel. This is a non-blocking send, so this should
+// be a single-element buffered channel, though this is not required.
+// Only a single channel may be registered for notifications at a
+// time; SetMaxHeap replaces any previously registered channel.
+//
+// The application is strongly encouraged to respond to this
+// notification by calling ReadGCPolicy and, if AvailGCPercent is less
+// than GCPercent, shedding load to reduce its live heap size. Setting
+// a maximum heap size limits the garbage collector's ability to
+// amortize the cost of garbage collection when the heap reaches the
+// heap size limit. This is particularly important in
+// request-processing systems, where increasing pressure on the
+// garbage collector reduces CPU time available to the application,
+// making it less able to complete work, leading to even more pressure
+// on the garbage collector. The application must shed load to avoid
+// this "GC death spiral".
+//
+// The limit set by SetMaxHeap is soft. If the garbage collector would
+// consume too much CPU to keep the heap under this limit (leading to
+// "thrashing"), it will allow the heap to grow larger than the
+// specified max heap.
+//
+// The heap size does not include everything in the process's memory
+// footprint. Notably, it does not include stacks, C-allocated memory,
+// or many runtime-internal structures.
+//
+// To disable the heap limit, pass ^uintptr(0) for the bytes argument.
+// In this case, notify can be nil.
+//
+// To depend only on the heap limit to trigger garbage collection,
+// call SetGCPercent(-1) after setting a heap limit.
+func SetMaxHeap(bytes uintptr, notify chan<- struct{}) uintptr {
+	if bytes == ^uintptr(0) {
+		return gcSetMaxHeap(bytes, nil)
+	}
+	if notify == nil {
+		panic("SetMaxHeap requires a non-nil notify channel")
+	}
+	return gcSetMaxHeap(bytes, notify)
+}
+
+// gcSetMaxHeap is provided by package runtime.
+func gcSetMaxHeap(bytes uintptr, notify chan<- struct{}) uintptr
+
+// ReadGCPolicy reads the garbage collector's current policy for
+// managing the heap size. This includes static settings controlled by
+// the application and dynamic policy determined by heap usage.
+func ReadGCPolicy(gcp *GCPolicy) {
+	gcp.GCPercent, gcp.MaxHeapBytes, gcp.AvailGCPercent = gcReadPolicy()
+}
+
+// gcReadPolicy is provided by package runtime.
+func gcReadPolicy() (gogc int, maxHeap uintptr, egogc int)

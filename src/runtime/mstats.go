@@ -335,8 +335,8 @@ type MemStats struct {
 	//
 	// The garbage collector's goal is to keep HeapAlloc ≤ NextGC.
 	// At the end of each GC cycle, the target for the next cycle
-	// is computed based on the amount of reachable data and the
-	// value of GOGC.
+	// is computed based on the amount of reachable data, the
+	// value of GOGC, and the max heap size (if set).
 	NextGC uint64
 
 	// LastGC is the time the last garbage collection finished, as

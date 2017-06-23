@@ -174,6 +174,12 @@ pkg net/http, method (Header) Values(string) []string
 pkg net/http, type Transport struct, DialTLSContext func(context.Context, string, string) (net.Conn, error)
 pkg net/http/httptest, type Server struct, EnableHTTP2 bool
 pkg net/textproto, method (MIMEHeader) Values(string) []string
+pkg runtime/debug, func ReadGCPolicy(*GCPolicy)
+pkg runtime/debug, func SetMaxHeap(uintptr, chan<- struct) uintptr
+pkg runtime/debug, type GCPolicy struct
+pkg runtime/debug, type GCPolicy struct, AvailGCPercent int
+pkg runtime/debug, type GCPolicy struct, GCPercent int
+pkg runtime/debug, type GCPolicy struct, MaxHeapBytes uintptr
 pkg strconv, method (*NumError) Unwrap() error
 pkg syscall (windows-386), const CTRL_CLOSE_EVENT = 2
 pkg syscall (windows-386), const CTRL_CLOSE_EVENT ideal-int

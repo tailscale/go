@@ -179,6 +179,114 @@ func abs64(a int64) int64 {
 	return a
 }
 
+func TestSetMaxHeap(t *testing.T) {
+	defer func() {
+		setGCPercentBallast = nil
+		setGCPercentSink = nil
+		SetMaxHeap(^uintptr(0), nil)
+		runtime.GC()
+	}()
+
+	runtime.GC()
+	var m1 runtime.MemStats
+	runtime.ReadMemStats(&m1)
+
+	// Create 50 MB of live heap as a baseline.
+	const baseline = 50 << 20
+	setGCPercentBallast = make([]byte, baseline-m1.Alloc)
+	// Disable GOGC-based policy.
+	defer SetGCPercent(SetGCPercent(-1))
+	// Set max heap to 2x baseline.
+	const limit = 2 * baseline
+	notify := make(chan struct{}, 1)
+	prev := SetMaxHeap(limit, notify)
+
+	// Check that that notified us of heap pressure.
+	select {
+	case <-notify:
+	default:
+		t.Errorf("missing GC pressure notification")
+	}
+
+	// Test return value.
+	if prev != ^uintptr(0) {
+		t.Errorf("want previous limit %d, got %d", ^uintptr(0), prev)
+	}
+	prev = SetMaxHeap(limit, notify)
+	if prev != limit {
+		t.Errorf("want previous limit %d, got %d", limit, prev)
+	}
+
+	// Allocate a bunch and check that we stay under the limit.
+	runtime.ReadMemStats(&m1)
+	var m2 runtime.MemStats
+	var gcp GCPolicy
+	for i := 0; i < 200; i++ {
+		setGCPercentSink = make([]byte, 1<<20)
+		runtime.ReadMemStats(&m2)
+		if m2.HeapAlloc > limit {
+			t.Fatalf("HeapAlloc %d exceeds heap limit %d", m2.HeapAlloc, limit)
+		}
+		ReadGCPolicy(&gcp)
+		if gcp.GCPercent != -1 {
+			t.Fatalf("want GCPercent %d, got policy %+v", -1, gcp)
+		}
+		if gcp.MaxHeapBytes != limit {
+			t.Fatalf("want MaxHeapBytes %d, got policy %+v", limit, gcp)
+		}
+		const availErr = 10
+		availLow := 100*(limit-baseline)/baseline - availErr
+		availHigh := 100*(limit-baseline)/baseline + availErr
+		if !(availLow <= gcp.AvailGCPercent && gcp.AvailGCPercent <= availHigh) {
+			t.Fatalf("AvailGCPercent %d out of range [%d, %d]", gcp.AvailGCPercent, availLow, availHigh)
+		}
+	}
+	if m1.NumGC == m2.NumGC {
+		t.Fatalf("failed to trigger GC")
+	}
+}
+
+func TestAvailGCPercent(t *testing.T) {
+	defer func() {
+		SetMaxHeap(^uintptr(0), nil)
+		runtime.GC()
+	}()
+
+	runtime.GC()
+
+	// Set GOGC=100.
+	defer SetGCPercent(SetGCPercent(100))
+	// Set max heap to 100MB.
+	const limit = 100 << 20
+	SetMaxHeap(limit, make(chan struct{}))
+
+	// Allocate a bunch and monitor AvailGCPercent.
+	var m runtime.MemStats
+	var gcp GCPolicy
+	sl := [][]byte{}
+	for i := 0; i < 200; i++ {
+		sl = append(sl, make([]byte, 1<<20))
+		runtime.GC()
+		runtime.ReadMemStats(&m)
+		ReadGCPolicy(&gcp)
+		// Use int64 to avoid overflow on 32-bit.
+		avail := int(100 * (limit - int64(m.HeapAlloc)) / int64(m.HeapAlloc))
+		if avail > 100 {
+			avail = 100
+		}
+		if avail < 10 {
+			avail = 10
+		}
+		const availErr = 2 // This is more controlled than the test above.
+		availLow := avail - availErr
+		availHigh := avail + availErr
+		if !(availLow <= gcp.AvailGCPercent && gcp.AvailGCPercent <= availHigh) {
+			t.Logf("MemStats: %+v\nGCPolicy: %+v\n", m, gcp)
+			t.Fatalf("AvailGCPercent %d out of range [%d, %d]", gcp.AvailGCPercent, availLow, availHigh)
+		}
+	}
+}
+
 func TestSetMaxThreadsOvf(t *testing.T) {
 	// Verify that a big threads count will not overflow the int32
 	// maxmcount variable, causing a panic (see Issue 16076).
