@@ -224,6 +224,7 @@ func (s *InitSchedule) staticassign(l *Node, r *Node) bool {
 		// Init slice.
 		bound := r.Right.Int64()
 		ta := types.NewArray(r.Type.Elem(), bound)
+		ta.SetNoalg(true)
 		a := staticname(ta)
 		s.inittemps[r] = a
 		n := l.copy()
