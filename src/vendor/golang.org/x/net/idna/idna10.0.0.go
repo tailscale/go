@@ -5,6 +5,7 @@
 // license that can be found in the LICENSE file.
 
 // +build go1.10
+// +build !omitidna
 
 // Package idna implements IDNA2008 using the compatibility processing
 // defined by UTS (Unicode Technical Standard) #46, which defines a standard to
