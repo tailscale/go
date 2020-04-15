@@ -6,9 +6,7 @@ package tls
 
 import (
 	"crypto"
-	"crypto/md5"
 	"crypto/rsa"
-	"crypto/sha1"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -79,28 +77,6 @@ func (ka rsaKeyAgreement) generateClientKeyExchange(config *Config, clientHello 
 	return preMasterSecret, ckx, nil
 }
 
-// sha1Hash calculates a SHA1 hash over the given byte slices.
-func sha1Hash(slices [][]byte) []byte {
-	hsha1 := sha1.New()
-	for _, slice := range slices {
-		hsha1.Write(slice)
-	}
-	return hsha1.Sum(nil)
-}
-
-// md5SHA1Hash implements TLS 1.0's hybrid hash function which consists of the
-// concatenation of an MD5 and SHA1 hash.
-func md5SHA1Hash(slices [][]byte) []byte {
-	md5sha1 := make([]byte, md5.Size+sha1.Size)
-	hmd5 := md5.New()
-	for _, slice := range slices {
-		hmd5.Write(slice)
-	}
-	copy(md5sha1, hmd5.Sum(nil))
-	copy(md5sha1[md5.Size:], sha1Hash(slices))
-	return md5sha1
-}
-
 // hashForServerKeyExchange hashes the given slices and returns their digest
 // using the given hash function (for >= TLS 1.2) or using a default based on
 // the sigType (for earlier TLS versions). For Ed25519 signatures, which don't
@@ -113,18 +89,12 @@ func hashForServerKeyExchange(sigType uint8, hashFunc crypto.Hash, version uint1
 		}
 		return signed
 	}
-	if version >= VersionTLS12 {
-		h := hashFunc.New()
-		for _, slice := range slices {
-			h.Write(slice)
-		}
-		digest := h.Sum(nil)
-		return digest
+	h := hashFunc.New()
+	for _, slice := range slices {
+		h.Write(slice)
 	}
-	if sigType == signatureECDSA {
-		return sha1Hash(slices)
-	}
-	return md5SHA1Hash(slices)
+	digest := h.Sum(nil)
+	return digest
 }
 
 // ecdheKeyAgreement implements a TLS key agreement where the server

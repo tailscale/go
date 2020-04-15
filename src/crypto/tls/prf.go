@@ -7,7 +7,6 @@ package tls
 import (
 	"crypto"
 	"crypto/hmac"
-	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -44,25 +43,6 @@ func pHash(result, secret, seed []byte, hash func() hash.Hash) {
 	}
 }
 
-// prf10 implements the TLS 1.0 pseudo-random function, as defined in RFC 2246, Section 5.
-func prf10(result, secret, label, seed []byte) {
-	hashSHA1 := sha1.New
-	hashMD5 := md5.New
-
-	labelAndSeed := make([]byte, len(label)+len(seed))
-	copy(labelAndSeed, label)
-	copy(labelAndSeed[len(label):], seed)
-
-	s1, s2 := splitPreMasterSecret(secret)
-	pHash(result, s1, labelAndSeed, hashMD5)
-	result2 := make([]byte, len(result))
-	pHash(result2, s2, labelAndSeed, hashSHA1)
-
-	for i, b := range result2 {
-		result[i] ^= b
-	}
-}
-
 // prf12 implements the TLS 1.2 pseudo-random function, as defined in RFC 5246, Section 5.
 func prf12(hashFunc func() hash.Hash) func(result, secret, label, seed []byte) {
 	return func(result, secret, label, seed []byte) {
@@ -86,8 +66,6 @@ var serverFinishedLabel = []byte("server finished")
 
 func prfAndHashForVersion(version uint16, suite *cipherSuite) (func(result, secret, label, seed []byte), crypto.Hash) {
 	switch version {
-	case VersionTLS10, VersionTLS11:
-		return prf10, crypto.Hash(0)
 	case VersionTLS12:
 		if suite.flags&suiteSHA384 != 0 {
 			return prf12(sha512.New384), crypto.SHA384
@@ -141,17 +119,14 @@ func keysFromMasterSecret(version uint16, suite *cipherSuite, masterSecret, clie
 }
 
 func newFinishedHash(version uint16, cipherSuite *cipherSuite) finishedHash {
-	var buffer []byte
-	if version >= VersionTLS12 {
-		buffer = []byte{}
-	}
+	buffer := []byte{}
 
 	prf, hash := prfAndHashForVersion(version, cipherSuite)
 	if hash != 0 {
-		return finishedHash{hash.New(), hash.New(), nil, nil, buffer, version, prf}
+		return finishedHash{hash.New(), hash.New(), buffer, version, prf}
 	}
 
-	return finishedHash{sha1.New(), sha1.New(), md5.New(), md5.New(), buffer, version, prf}
+	return finishedHash{sha1.New(), sha1.New(), buffer, version, prf}
 }
 
 // A finishedHash calculates the hash of a set of handshake messages suitable
@@ -159,10 +134,6 @@ func newFinishedHash(version uint16, cipherSuite *cipherSuite) finishedHash {
 type finishedHash struct {
 	client hash.Hash
 	server hash.Hash
-
-	// Prior to TLS 1.2, an additional MD5 hash is required.
-	clientMD5 hash.Hash
-	serverMD5 hash.Hash
 
 	// In TLS 1.2, a full buffer is sadly required.
 	buffer []byte
@@ -175,11 +146,6 @@ func (h *finishedHash) Write(msg []byte) (n int, err error) {
 	h.client.Write(msg)
 	h.server.Write(msg)
 
-	if h.version < VersionTLS12 {
-		h.clientMD5.Write(msg)
-		h.serverMD5.Write(msg)
-	}
-
 	if h.buffer != nil {
 		h.buffer = append(h.buffer, msg...)
 	}
@@ -188,13 +154,7 @@ func (h *finishedHash) Write(msg []byte) (n int, err error) {
 }
 
 func (h finishedHash) Sum() []byte {
-	if h.version >= VersionTLS12 {
-		return h.client.Sum(nil)
-	}
-
-	out := make([]byte, 0, md5.Size+sha1.Size)
-	out = h.clientMD5.Sum(out)
-	return h.client.Sum(out)
+	return h.client.Sum(nil)
 }
 
 // clientSum returns the contents of the verify_data member of a client's
