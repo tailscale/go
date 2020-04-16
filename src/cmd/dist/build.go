@@ -372,6 +372,9 @@ func findgoversion() string {
 					b = "builder " + hostType
 				}
 			}
+			if isGitRepo() {
+				b += "-ts" + chomp(run(goroot, CheckExit, "git", "log", "-n", "1", "--format=format:%h", "HEAD"))
+			}
 			return b
 		}
 	}
