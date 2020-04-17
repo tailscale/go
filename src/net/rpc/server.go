@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build !omitreflectcall
+
 /*
 	Package rpc provides access to the exported methods of an object across a
 	network or other I/O connection.  A server registers an object, making it visible

@@ -307,33 +307,6 @@ func (v Value) CanSet() bool {
 	return v.flag&(flagAddr|flagRO) == flagAddr
 }
 
-// Call calls the function v with the input arguments in.
-// For example, if len(in) == 3, v.Call(in) represents the Go call v(in[0], in[1], in[2]).
-// Call panics if v's Kind is not Func.
-// It returns the output results as Values.
-// As in Go, each input argument must be assignable to the
-// type of the function's corresponding input parameter.
-// If v is a variadic function, Call creates the variadic slice parameter
-// itself, copying in the corresponding values.
-func (v Value) Call(in []Value) []Value {
-	v.mustBe(Func)
-	v.mustBeExported()
-	return v.call("Call", in)
-}
-
-// CallSlice calls the variadic function v with the input arguments in,
-// assigning the slice in[len(in)-1] to v's final variadic argument.
-// For example, if len(in) == 3, v.CallSlice(in) represents the Go call v(in[0], in[1], in[2]...).
-// CallSlice panics if v's Kind is not Func or if v is not variadic.
-// It returns the output results as Values.
-// As in Go, each input argument must be assignable to the
-// type of the function's corresponding input parameter.
-func (v Value) CallSlice(in []Value) []Value {
-	v.mustBe(Func)
-	v.mustBeExported()
-	return v.call("CallSlice", in)
-}
-
 var callGC bool // for testing; see TestCallMethodJump
 
 func (v Value) call(op string, in []Value) []Value {

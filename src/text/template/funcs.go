@@ -316,63 +316,13 @@ func length(item interface{}) (int, error) {
 // call returns the result of evaluating the first argument as a function.
 // The function must return 1 result, or 2 results, the second of which is an error.
 func call(fn reflect.Value, args ...reflect.Value) (reflect.Value, error) {
-	v := indirectInterface(fn)
-	if !v.IsValid() {
-		return reflect.Value{}, fmt.Errorf("call of nil")
-	}
-	typ := v.Type()
-	if typ.Kind() != reflect.Func {
-		return reflect.Value{}, fmt.Errorf("non-function of type %s", typ)
-	}
-	if !goodFunc(typ) {
-		return reflect.Value{}, fmt.Errorf("function called with %d args; should be 1 or 2", typ.NumOut())
-	}
-	numIn := typ.NumIn()
-	var dddType reflect.Type
-	if typ.IsVariadic() {
-		if len(args) < numIn-1 {
-			return reflect.Value{}, fmt.Errorf("wrong number of args: got %d want at least %d", len(args), numIn-1)
-		}
-		dddType = typ.In(numIn - 1).Elem()
-	} else {
-		if len(args) != numIn {
-			return reflect.Value{}, fmt.Errorf("wrong number of args: got %d want %d", len(args), numIn)
-		}
-	}
-	argv := make([]reflect.Value, len(args))
-	for i, arg := range args {
-		value := indirectInterface(arg)
-		// Compute the expected type. Clumsy because of variadics.
-		argType := dddType
-		if !typ.IsVariadic() || i < numIn-1 {
-			argType = typ.In(i)
-		}
-
-		var err error
-		if argv[i], err = prepareArg(value, argType); err != nil {
-			return reflect.Value{}, fmt.Errorf("arg %d: %s", i, err)
-		}
-	}
-	return safeCall(v, argv)
+	return reflect.Value{}, errors.New("reflect calls disabled in build")
 }
 
 // safeCall runs fun.Call(args), and returns the resulting value and error, if
 // any. If the call panics, the panic value is returned as an error.
 func safeCall(fun reflect.Value, args []reflect.Value) (val reflect.Value, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if e, ok := r.(error); ok {
-				err = e
-			} else {
-				err = fmt.Errorf("%v", r)
-			}
-		}
-	}()
-	ret := fun.Call(args)
-	if len(ret) == 2 && !ret[1].IsNil() {
-		return ret[0], ret[1].Interface().(error)
-	}
-	return ret[0], nil
+	return reflect.Value{}, errors.New("reflect calls disabled in build")
 }
 
 // Boolean logic.

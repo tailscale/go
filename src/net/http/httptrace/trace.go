@@ -200,8 +200,10 @@ func (t *ClientTrace) compose(old *ClientTrace) {
 
 		// We need to call both tf and of in some order.
 		newFunc := reflect.MakeFunc(hookType, func(args []reflect.Value) []reflect.Value {
-			tfCopy.Call(args)
-			return of.Call(args)
+			//tfCopy.Call(args)
+			//return of.Call(args)
+			_ = tfCopy
+			return nil
 		})
 		tv.Field(i).Set(newFunc)
 	}
