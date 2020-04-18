@@ -67,7 +67,6 @@ func deadcode(ctxt *Link) {
 	d.init()
 	d.flood()
 
-	callSym := ctxt.Syms.ROLookup("reflect.Value.Call", sym.SymVerABIInternal)
 	methSym := ctxt.Syms.ROLookup("reflect.Value.Method", sym.SymVerABIInternal)
 	reflectSeen := false
 
@@ -79,7 +78,7 @@ func deadcode(ctxt *Link) {
 
 	for {
 		if !reflectSeen {
-			if d.reflectMethod || (callSym != nil && callSym.Attr.Reachable()) || (methSym != nil && methSym.Attr.Reachable()) {
+			if d.reflectMethod || (methSym != nil && methSym.Attr.Reachable()) {
 				// Methods might be called via reflection. Give up on
 				// static analysis, mark all exported methods of
 				// all reachable types as reachable.
