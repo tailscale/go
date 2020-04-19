@@ -1,0 +1,52 @@
+name: Build toolchain
+
+on:
+  push:
+    branches:
+      - tailscale
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v1
+      with:
+        go-version: 1
+      id: go
+
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Build toolchain
+      run: cd src && ./all.bash
+
+    - name: Archive toolchain
+      run: cd .. && tar --exclude-vcs -zcf go.tar.gz go
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        # Release name can't be the same as tag name, sigh
+        tag_name: build-${{ github.sha }}
+        release_name: ${{ github.sha }}
+        draft: false
+        prerelease: true
+
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ../go.tar.gz
+        asset_name: go.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Delete older builds
+      run: ./.github/workflows/prune_old_builds.sh "${{ secrets.GITHUB_TOKEN }}"
