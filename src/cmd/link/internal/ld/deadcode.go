@@ -9,6 +9,8 @@ import (
 	"cmd/internal/sys"
 	"cmd/link/internal/sym"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -82,6 +84,12 @@ func deadcode(ctxt *Link) {
 				// static analysis, mark all exported methods of
 				// all reachable types as reachable.
 				reflectSeen = true
+				if ctxt.Debugvlog != 0 {
+					ctxt.Logf("deadcode: reflectSeen\n")
+				}
+				if v, _ := strconv.ParseBool(os.Getenv("TS_LINK_FAIL_REFLECT")); v {
+					panic("unexpected reflect with TS_LINK_FAIL_REFLECT")
+				}
 			}
 		}
 
