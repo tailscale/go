@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - tailscale
+  pull_request:
+    branches:
+      - '*'
 
 jobs:
   build:
@@ -19,18 +22,31 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v2
 
-    - name: Build toolchain
+    # Linux build
+    - name: Build toolchain (linux)
       run: cd src && ./make.bash
 
     - name: Archive toolchain
-      run: cd .. && tar --exclude-vcs -zcf go.tar.gz go
+      run: cd .. && tar --exclude-vcs -zcf linux.tar.gz go
+
+    - name: Clean toolchain
+      run: cd src && ./clean.bash
+
+    # macOS build
+    - name: Build toolchain (darwin)
+      run: cd src && ./make.bash
+      env:
+        GOOS: darwin
+
+    - name: Archive toolchain
+      run: cd .. && tar --exclude-vcs -zcf darwin.tar.gz go
 
       # Run all.bash after building the toolchain archive, so we don't
-      # end up with a bunch of garbage.
+      # end up with a bunch of garbage in the tarballs.
     - name: Test toolchain
       run: cd src && ./all.bash
 
-    - name: Create Release
+    - name: Create release
       id: create_release
       uses: actions/create-release@v1
       env:
@@ -42,15 +58,26 @@ jobs:
         draft: false
         prerelease: true
 
-    - name: Upload Release Asset
+    - name: Upload linux tarball
       id: upload-release-asset 
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ../go.tar.gz
-        asset_name: go.tar.gz
+        asset_path: ../linux.tar.gz
+        asset_name: linux.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload darwin tarball
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ../darwin.tar.gz
+        asset_name: darwin.tar.gz
         asset_content_type: application/gzip
 
     - name: Delete older builds

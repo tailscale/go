@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-KEEP=3
+KEEP=10
 GITHUB_TOKEN=$1
 
 delete_release() {
