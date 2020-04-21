@@ -44,7 +44,9 @@ jobs:
       env:
         GOOS: darwin
     - name: delete linux artifacts
-      run: rm -rf pkg/linux_amd64 pkg/tool/linux_amd64
+      run: rm -rf pkg/linux_amd64 pkg/tool/linux_amd64 bin/go bin/gofmt
+    - name: move darwin artifacts to the right place
+      run: mv bin/darwin_amd64/* bin/
     - name: archive
       run: cd .. && tar --exclude-vcs -zcf darwin.tar.gz go
     - name: save
