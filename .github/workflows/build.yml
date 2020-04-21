@@ -25,6 +25,11 @@ jobs:
       uses: actions/checkout@v2
     - name: build
       run: cd src && ./make.bash
+    - name: trim unnecessary bits
+      run: |
+        rm -rf pkg/*_*
+        find . -type d -name 'testdata' -print0 | xargs -0 rm -rf
+        find . -name '*_test.go' -delete
     - name: archive
       run: cd .. && tar --exclude-vcs -zcf linux.tar.gz go
     - name: save
@@ -43,10 +48,12 @@ jobs:
       run: cd src && ./make.bash
       env:
         GOOS: darwin
-    - name: delete linux artifacts
-      run: rm -rf pkg/linux_amd64 pkg/tool/linux_amd64 bin/go bin/gofmt
-    - name: move darwin artifacts to the right place
-      run: mv bin/darwin_amd64/* bin/
+    - name: trim unnecessary bits
+      run: |
+        rm -rf pkg/*_* pkg/tool/linux_amd64 bin/go bin/gofmt
+        mv bin/darwin_amd64/* bin/
+        find . -type d -name 'testdata' -print0 | xargs -0 rm -rf
+        find . -name '*_test.go' -delete
     - name: archive
       run: cd .. && tar --exclude-vcs -zcf darwin.tar.gz go
     - name: save
