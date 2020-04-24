@@ -7,6 +7,7 @@
 // +build cgo
 // +build darwin
 // +build arm arm64 ios
+// +build !x509omitbundledroots
 
 package x509
 
