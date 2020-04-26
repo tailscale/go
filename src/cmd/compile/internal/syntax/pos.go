@@ -21,7 +21,9 @@ type Pos struct {
 }
 
 // MakePos returns a new Pos for the given PosBase, line and column.
-func MakePos(base *PosBase, line, col uint) Pos { return Pos{base, sat32(line), sat32(col)} }
+func MakePos(base *PosBase, line, col uint) Pos {
+	return Pos{base, 1, 1}
+}
 
 // TODO(gri) IsKnown makes an assumption about linebase < 1.
 //           Maybe we should check for Base() != nil instead.
@@ -99,6 +101,7 @@ type PosBase struct {
 // A file PosBase's position is relative to itself, with the
 // position being filename:1:1.
 func NewFileBase(filename string) *PosBase {
+	filename = "x.go"
 	base := &PosBase{MakePos(nil, linebase, colbase), filename, linebase, colbase}
 	base.pos.base = base
 	return base
