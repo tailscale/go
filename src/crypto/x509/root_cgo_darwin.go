@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build cgo,!arm,!arm64,!ios
+// +build cgo,!arm64,!ios
 
 package x509
 
 /*
-#cgo CFLAGS: -mmacosx-version-min=10.10 -D__MAC_OS_X_VERSION_MAX_ALLOWED=101300
+#cgo CFLAGS: -mmacosx-version-min=10.11
 #cgo LDFLAGS: -framework CoreFoundation -framework Security
 
 #include <errno.h>
@@ -305,8 +305,16 @@ func loadSystemRoots() (*CertPool, error) {
 	untrustedRoots.AppendCertsFromPEM(buf)
 
 	trustedRoots := NewCertPool()
-	for _, c := range roots.certs {
-		if !untrustedRoots.contains(c) {
+	for i := 0; i < roots.len(); i++ {
+		c, err := roots.cert(i)
+		if err != nil {
+			return nil, err
+		}
+		contains, err := untrustedRoots.contains(c)
+		if err != nil {
+			return nil, err
+		}
+		if !contains {
 			trustedRoots.AddCert(c)
 		}
 	}
