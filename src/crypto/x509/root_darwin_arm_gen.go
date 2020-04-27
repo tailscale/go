@@ -52,7 +52,7 @@ func main() {
 		if err := zw.Close(); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Fprintf(buf, "p.addCertFuncNotDup(%q, %q, certUncompressor(%q))\n",
+		fmt.Fprintf(buf, "\t{%q, %q, %q},\n",
 			cert.RawSubject,
 			cert.SubjectKeyId,
 			gzbuf.Bytes())
@@ -103,9 +103,16 @@ package x509
 
 func loadSystemRoots() (*CertPool, error) {
 	p := NewCertPool()
+	for i := range rootCerts {
+		rc := &rootCerts[i]
+		p.addCertFuncNotDup(rc.rawSubj, rc.keyID, certUncompressor(rc.zcert))
+	}
+	return p, nil
+}
+
+var rootCerts = [...]struct{ rawSubj, keyID, zcert string }{
 `
 
 const footer = `
-	return p, nil
 }
 `
