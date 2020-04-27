@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:generate go run root_darwin_arm_gen.go -output root_darwin_armx.go
+//go:generate go run root_embed_darwin_gen.go -output root_embed_darwin.go
 
 package x509
 

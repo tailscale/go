@@ -4,7 +4,7 @@
 
 // +build ignore
 
-// Generates root_darwin_arm64.go.
+// Generates root_embed_darwin.go.
 //
 // As of iOS 8, there is no API for querying the system trusted X.509 root
 // certificates. We could use SecTrustEvaluate to verify that a trust chain
@@ -28,7 +28,7 @@ import (
 	"log"
 )
 
-var output = flag.String("output", "root_darwin_arm64.go", "file name to write")
+var output = flag.String("output", "root_embed_darwin.go", "file name to write")
 
 func main() {
 	certs, err := selectCerts()
@@ -98,8 +98,17 @@ const header = `
 // license that can be found in the LICENSE file.
 
 // +build !x509omitbundledroots
+// +build darwin
+// +build arm64 ios
 
 package x509
+
+import (
+	"compress/gzip"
+	"io/ioutil"
+	"strings"
+	"sync"
+)
 
 func loadSystemRoots() (*CertPool, error) {
 	p := NewCertPool()
@@ -108,6 +117,28 @@ func loadSystemRoots() (*CertPool, error) {
 		p.addCertFuncNotDup(rc.rawSubj, rc.keyID, certUncompressor(rc.zcert))
 	}
 	return p, nil
+}
+
+func certUncompressor(zcertBytes string) func() (*Certificate, error) {
+	var once sync.Once
+	var c *Certificate
+	var err error
+	return func() (*Certificate, error) {
+		once.Do(func() {
+			var certBytes []byte
+			var zr *gzip.Reader
+			zr, err = gzip.NewReader(strings.NewReader(zcertBytes))
+			if err != nil {
+				return
+			}
+			certBytes, err = ioutil.ReadAll(zr)
+			if err != nil {
+				return
+			}
+			c, err = ParseCertificate(certBytes)
+		})
+		return c, err
+	}
 }
 
 var rootCerts = [...]struct{ rawSubj, keyID, zcert string }{
