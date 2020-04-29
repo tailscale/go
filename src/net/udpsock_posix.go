@@ -103,6 +103,10 @@ func (sd *sysDialer) dialUDP(ctx context.Context, laddr, raddr *UDPAddr) (*UDPCo
 }
 
 func (sl *sysListener) listenUDP(ctx context.Context, laddr *UDPAddr) (*UDPConn, error) {
+	if panicOnUnspecListen(laddr.IP) {
+		panic("tailscale: can't listen on unspecified address in test")
+	}
+
 	fd, err := internetSocket(ctx, sl.network, laddr, nil, syscall.SOCK_DGRAM, 0, "listen", sl.ListenConfig.Control)
 	if err != nil {
 		return nil, err

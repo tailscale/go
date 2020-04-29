@@ -164,7 +164,28 @@ func (ln *TCPListener) file() (*os.File, error) {
 	return f, nil
 }
 
+// Tailscale addition: if TS_PANIC_ON_TEST_LISTEN_UNSPEC is set, panic
+// if a listen tries to listen on all interfaces (for debugging Mac
+// firewall dialogs in tests).
+func panicOnUnspecListen(ip IP) bool {
+	if ip != nil && !ip.IsUnspecified() {
+		return false
+	}
+	v := os.Getenv("TS_PANIC_ON_TEST_LISTEN_UNSPEC")
+	if v == "" {
+		return false
+	}
+	switch v[0] {
+	case 't', 'T', '1':
+		return true
+	}
+	return false
+}
+
 func (sl *sysListener) listenTCP(ctx context.Context, laddr *TCPAddr) (*TCPListener, error) {
+	if panicOnUnspecListen(laddr.IP) {
+		panic("tailscale: can't listen on unspecified address in test")
+	}
 	fd, err := internetSocket(ctx, sl.network, laddr, nil, syscall.SOCK_STREAM, 0, "listen", sl.ListenConfig.Control)
 	if err != nil {
 		return nil, err
