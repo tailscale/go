@@ -26,7 +26,7 @@ jobs:
     - name: build
       run: cd src && ./make.bash
       env:
-        CGO_ENABLED=0
+        CGO_ENABLED: 0
     - name: trim unnecessary bits
       run: |
         rm -rf pkg/*_*
