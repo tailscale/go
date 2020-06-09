@@ -500,7 +500,7 @@ func loadImports() (importDir map[string]string, importMap map[string]string) {
 
 	// Fixup for vendor packages listed in args above.
 	fixup := []string{
-		"vendor/golang.org/x/net/route",
+		//"vendor/golang.org/x/net/route",
 	}
 	for _, pkg := range fixup {
 		importDir[pkg] = filepath.Join(build.Default.GOROOT, "src", pkg)

@@ -2,6 +2,8 @@ env GO111MODULE=on
 env GOPROXY=off
 
 [!gc] skip
+# test disabled because we export golang.org/x/net as stdlib package
+[gc] skip
 
 # 'go list' should report imports from _test.go in the TestImports field.
 go list -f '{{.TestImports}}'

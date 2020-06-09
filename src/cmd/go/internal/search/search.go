@@ -472,7 +472,7 @@ func IsStandardImportPath(path string) bool {
 		i = len(path)
 	}
 	elem := path[:i]
-	return !strings.Contains(elem, ".")
+	return !strings.Contains(elem, ".") || strings.HasPrefix(path, "golang.org/x/net")
 }
 
 // IsRelativePath reports whether pattern should be interpreted as a directory
