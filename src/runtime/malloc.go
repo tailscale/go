@@ -269,7 +269,7 @@ const (
 	// We use the L1 map on 64-bit Windows because the arena size
 	// is small, but the address space is still 48 bits, and
 	// there's a high cost to having a large L2.
-	arenaL1Bits = 6 * (_64bit * sys.GoosWindows)
+	arenaL1Bits = 6 * (_64bit * (sys.GoosWindows | want4MB))
 
 	// arenaL2Bits is the number of bits of the arena number
 	// covered by the second level arena index.
