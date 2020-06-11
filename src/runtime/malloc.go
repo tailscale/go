@@ -242,12 +242,14 @@ const (
 	// This is particularly important with the race detector,
 	// since it significantly amplifies the cost of committed
 	// memory.
+	// (Tailscale: It's also 4MB when explicitly opted-in via the
+	// "runtime_small_arena" build tag.)
 	heapArenaBytes = 1 << logHeapArenaBytes
 
 	// logHeapArenaBytes is log_2 of heapArenaBytes. For clarity,
 	// prefer using heapArenaBytes where possible (we need the
 	// constant to compute some other constants).
-	logHeapArenaBytes = (6+20)*(_64bit*(1-sys.GoosWindows)*(1-sys.GoarchWasm)) + (2+20)*(_64bit*sys.GoosWindows) + (2+20)*(1-_64bit) + (2+20)*sys.GoarchWasm
+	logHeapArenaBytes = (6+20)*(_64bit*(1-sys.GoosWindows)*(1-sys.GoarchWasm)*(1-want4MB)) + (2+20)*(_64bit*sys.GoosWindows*(1-want4MB)) + (2+20)*(1-_64bit) + (2+20)*sys.GoarchWasm*(1-want4MB) + (2+20)*want4MB
 
 	// heapArenaBitmapBytes is the size of each heap arena's bitmap.
 	heapArenaBitmapBytes = heapArenaBytes / (sys.PtrSize * 8 / 2)
@@ -267,7 +269,7 @@ const (
 	// We use the L1 map on 64-bit Windows because the arena size
 	// is small, but the address space is still 48 bits, and
 	// there's a high cost to having a large L2.
-	arenaL1Bits = 6 * (_64bit * sys.GoosWindows)
+	arenaL1Bits = 6 * (_64bit * (sys.GoosWindows | want4MB))
 
 	// arenaL2Bits is the number of bits of the arena number
 	// covered by the second level arena index.
