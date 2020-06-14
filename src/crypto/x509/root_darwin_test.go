@@ -48,8 +48,8 @@ func TestSystemRoots(t *testing.T) {
 		c := sysRoots.mustCert(i)
 		sysPool[string(c.Raw)] = c
 	}
-	for i := 0; i < execRoots.len(); i++ {
-		c := execRoots.mustCert(i)
+	for i := 0; i < cgoRoots.len(); i++ {
+		c := cgoRoots.mustCert(i)
 		if _, ok := sysPool[string(c.Raw)]; ok {
 			delete(sysPool, string(c.Raw))
 		} else {

@@ -415,6 +415,7 @@ var pkgDeps = map[string][]string{
 		"L4", "CRYPTO-MATH", "OS", "CGO", "crypto/ed25519", "crypto/x509/internal/macOS",
 		"crypto/x509/pkix", "encoding/pem", "encoding/hex", "net", "os/user", "syscall", "net/url",
 		"golang.org/x/crypto/cryptobyte", "golang.org/x/crypto/cryptobyte/asn1",
+		"compress/gzip", // Tailscale: so iOS can gunzip compressed certs embedded in binary
 	},
 	"crypto/x509/pkix":           {"L4", "CRYPTO-MATH", "encoding/hex"},
 	"crypto/x509/internal/macOS": {"L4"},
