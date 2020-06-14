@@ -87,6 +87,11 @@ type Link struct {
 
 	Loaded bool // set after all inputs have been loaded as symbols
 
+	// ForbidReflect, if true, makes the deadcode pass panic if the binary ever
+	// has to enable the reflectSeen bit from seeing a SymFlagReflectMethod
+	// symbol. (method by name lookups, etc).
+	ForbidReflect bool
+
 	compressDWARF bool
 
 	Libdir       []string
