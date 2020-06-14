@@ -1246,6 +1246,17 @@ func addstrdata1(ctxt *Link, arg string) {
 	pkg = objabi.PathToPrefix(pkg)
 	name := pkg + arg[dot:eq]
 	value := arg[eq+1:]
+
+	// Handle "-X opt.forbidreflect=1" as another way to set -forbidreflect.
+	// This lets Tailscale set the -X way and work with either the upstream
+	// Go toolchain (that doesn't support link -forbidreflect) or the
+	// tailscale/go fork (that does). See https://github.com/tailscale/go/issues/115
+	// for tracking getting this upstream.
+	if pkg == "opt" && name == "opt.forbidreflect" && value == "1" {
+		ctxt.ForbidReflect = true
+		return
+	}
+
 	if _, ok := strdata[name]; !ok {
 		strnames = append(strnames, name)
 	}

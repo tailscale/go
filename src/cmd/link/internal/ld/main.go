@@ -204,6 +204,7 @@ func Main(arch *sys.Arch, theArch Arch) {
 	}
 	flagHeadType := flag.String("H", "", "set header `type`")
 	flag.BoolVar(&ctxt.linkShared, "linkshared", false, "link against installed Go shared libraries")
+	flag.BoolVar(&ctxt.ForbidReflect, "forbidreflect", false, "error if reflect is used")
 	flag.Var(&ctxt.LinkMode, "linkmode", "set link `mode`")
 	flag.Var(&ctxt.BuildMode, "buildmode", "set build `mode`")
 	flag.BoolVar(&ctxt.compressDWARF, "compressdwarf", true, "compress DWARF if possible")

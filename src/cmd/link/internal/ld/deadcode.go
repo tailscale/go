@@ -476,6 +476,15 @@ func deadcode(ctxt *Link) {
 	if *flagPruneWeakMap {
 		d.mapinitcleanup()
 	}
+
+	if d.reflectSeen {
+		if ctxt.Debugvlog != 0 {
+			ctxt.Logf("deadcode: reflectSeen\n")
+		}
+		if ctxt.ForbidReflect {
+			panic("unexpected reflect with -forbidreflect")
+		}
+	}
 }
 
 // methodsig is a typed method signature (name + type).
