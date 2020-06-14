@@ -13,6 +13,8 @@ import (
 	"cmd/link/internal/sym"
 	"container/heap"
 	"fmt"
+	"os"
+	"strconv"
 	"unicode"
 )
 
@@ -297,6 +299,15 @@ func deadcode(ctxt *Link) {
 			break
 		}
 		d.flood()
+	}
+
+	if d.reflectSeen {
+		if ctxt.Debugvlog != 0 {
+			ctxt.Logf("deadcode: reflectSeen\n")
+		}
+		if v, _ := strconv.ParseBool(os.Getenv("TS_LINK_FAIL_REFLECT")); v {
+			panic("unexpected reflect with TS_LINK_FAIL_REFLECT")
+		}
 	}
 
 	n := ldr.NSym()
