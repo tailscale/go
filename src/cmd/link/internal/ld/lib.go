@@ -157,6 +157,7 @@ const AfterLoadlibFull = 2
 func (ctxt *Link) mkArchSym(which int, name string, ver int, ls *loader.Sym, ss **sym.Symbol) {
 	if which == BeforeLoadlibFull {
 		*ls = ctxt.loader.LookupOrCreateSym(name, ver)
+		ctxt.loader.SetAttrReachable(*ls, true)
 	} else {
 		*ss = ctxt.loader.Syms[*ls]
 	}
@@ -167,6 +168,7 @@ func (ctxt *Link) mkArchSym(which int, name string, ver int, ls *loader.Sym, ss 
 func (ctxt *Link) mkArchSymVec(which int, name string, ver int, ls []loader.Sym, ss []*sym.Symbol) {
 	if which == BeforeLoadlibFull {
 		ls[ver] = ctxt.loader.LookupOrCreateSym(name, ver)
+		ctxt.loader.SetAttrReachable(ls[ver], true)
 	} else if ls[ver] != 0 {
 		ss[ver] = ctxt.loader.Syms[ls[ver]]
 	}
@@ -2124,7 +2126,9 @@ func ldshlibsyms(ctxt *Link, shlib string) {
 		Errorf(nil, "cannot open shared library: %s", libpath)
 		return
 	}
-	defer f.Close()
+	// Keep the file open as decodetypeGcprog needs to read from it.
+	// TODO: fix. Maybe mmap the file.
+	//defer f.Close()
 
 	hash, err := readnote(f, ELF_NOTE_GO_NAME, ELF_NOTE_GOABIHASH_TAG)
 	if err != nil {

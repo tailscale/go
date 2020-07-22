@@ -3,10 +3,6 @@
 // license that can be found in the LICENSE file.
 
 // Package x509 parses X.509-encoded keys and certificates.
-//
-// On UNIX systems the environment variables SSL_CERT_FILE and SSL_CERT_DIR
-// can be used to override the system default locations for the SSL certificate
-// file and SSL certificate files directory, respectively.
 package x509
 
 import (
@@ -2353,7 +2349,7 @@ type certificateRequest struct {
 	SignatureValue     asn1.BitString
 }
 
-// oidExtensionRequest is a PKCS#9 OBJECT IDENTIFIER that indicates requested
+// oidExtensionRequest is a PKCS #9 OBJECT IDENTIFIER that indicates requested
 // extensions in a CSR.
 var oidExtensionRequest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 14}
 

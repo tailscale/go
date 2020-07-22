@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build !ios
+
 package x509
 
 import (
 	"bytes"
-	"crypto/x509/internal/macOS"
+	macOS "crypto/x509/internal/macos"
 	"fmt"
 	"os"
 	"strings"

@@ -34,9 +34,9 @@ Do not send CLs removing the interior tags from such phrases.
 <h3 id="darwin">Darwin</h3>
 
 <p>
-  As <a href="go1.14#darwin">announced</a> in the Go 1.14 release notes,
-  Go 1.15 now requires macOS 10.12 Sierra or later;
-  support for previous versions has been discontinued.
+  As <a href="go1.14#darwin">announced</a> in the Go 1.14 release
+  notes, Go 1.15 requires macOS 10.12 Sierra or later; support for
+  previous versions has been discontinued.
 </p>
 
 <p> <!-- golang.org/issue/37610, golang.org/issue/37611, CL 227582, and CL 227198  -->
@@ -50,9 +50,9 @@ Do not send CLs removing the interior tags from such phrases.
 <h3 id="windows">Windows</h3>
 
 <p> <!-- CL 214397 and CL 230217 -->
-  Go 1.15 now generates Windows ASLR executables when -buildmode=pie
-  cmd/link flag is provided. Go command uses -buildmode=pie by default
-  on Windows.
+  Go now generates Windows ASLR executables when <code>-buildmode=pie</code>
+  cmd/link flag is provided. Go command uses <code>-buildmode=pie</code>
+  by default on Windows.
 </p>
 
 <p><!-- CL 227003 -->
@@ -145,7 +145,7 @@ Do not send CLs removing the interior tags from such phrases.
   <a href="https://golang.org/issue/36568">issue #36568</a>). The workaround is
   not enabled by default because it is not safe to use when Go versions lower
   than 1.14.2 and 1.13.10 are running concurrently with the same module cache.
-  It can be enabled by explictly setting the environment variable
+  It can be enabled by explicitly setting the environment variable
   <code>GODEBUG=modcacheunzipinplace=1</code>.
 </p>
 
@@ -177,7 +177,8 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 
 <p>
-  This new vet check is enabled by default when using <code>go test</code>.
+  This new vet check is enabled by default when
+  using <code>go</code> <code>test</code>.
 </p>
 
 <p>
@@ -205,7 +206,8 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 
 <p>
-  This new vet check is enabled by default when using <code>go test</code>.
+  This new vet check is enabled by default when
+  using <code>go</code> <code>test</code>.
 </p>
 
 <p>
@@ -313,7 +315,8 @@ Do not send CLs removing the interior tags from such phrases.
 <p>
   For a representative set of large Go programs, linking is 20% faster
   and requires 30% less memory on average, for <code>ELF</code>-based
-  OSes running on <code>amd64</code> architectures, with more modest
+  OSes (Linux, FreeBSD, NetBSD, OpenBSD, Dragonfly, and Solaris)
+  running on <code>amd64</code> architectures, with more modest
   improvements for other architecture/OS combinations.
 </p>
 
@@ -330,6 +333,13 @@ Do not send CLs removing the interior tags from such phrases.
   to <a href="https://golang.org/s/better-linker">modernize the Go
   linker</a>, meaning that there will be additional linker
   improvements expected in future releases.
+</p>
+
+<p><!-- CL 207877 -->
+  The linker now defaults to internal linking mode
+  for <code>-buildmode=pie</code> on
+  <code>linux/amd64</code> and <code>linux/arm64</code>, so these
+  configurations no longer require a C linker.
 </p>
 
 <h2 id="objdump">Objdump</h2>
@@ -359,11 +369,11 @@ Do not send CLs removing the interior tags from such phrases.
 <h3 id="cgo">Cgo</h3>
 
 <p><!-- CL 235817 -->
-	Go 1.15 will translate the C type <code>EGLConfig</code> to the
-	Go type <code>uintptr</code>. This change is similar to how Go
-	1.12 and newer treats <code>EGLDisplay</code>, Darwin's CoreFoundation and
-	Java's JNI types. See the <a href="/cmd/cgo/#hdr-Special_cases">cgo
-	documentation</a> for more information.
+  Go 1.15 will translate the C type <code>EGLConfig</code> to the
+  Go type <code>uintptr</code>. This change is similar to how Go
+  1.12 and newer treats <code>EGLDisplay</code>, Darwin's CoreFoundation and
+  Java's JNI types. See the <a href="/cmd/cgo/#hdr-Special_cases">cgo
+  documentation</a> for more information.
 </p>
 
 <h3 id="minor_library_changes">Minor changes to the library</h3>
@@ -374,24 +384,27 @@ Do not send CLs removing the interior tags from such phrases.
   in mind.
 </p>
 
-<dl id="debug/pe"><dt><a href="/pkg/debug/pe/">debug/pe</a></dt>
+<dl id="bufio"><dt><a href="/pkg/bufio/">bufio</a></dt>
   <dd>
-    <p><!-- CL 222637 -->
-      The package now defines the
-      <code>IMAGE_FILE</code>, <code>IMAGE_SUBSYSTEM</code>,
-      and <code>IMAGE_DLLCHARACTERISTICS</code> constants used by the
-      PE file format.
+    <p><!-- CL 225357, CL 225557 -->
+      When a <a href="/pkg/bufio/#Scanner"><code>Scanner</code></a> is
+      used with an invalid
+      <a href="/pkg/io/#Reader"><code>io.Reader</code></a> that
+      incorrectly returns a negative number from <code>Read</code>,
+      the <code>Scanner</code> will no longer panic, but will instead
+      return the new error
+      <a href="/pkg/bufio/#ErrBadReadCount"><code>ErrBadReadCount</code></a>.
     </p>
   </dd>
-</dl><!-- debug/pe -->
+</dl><!-- bufio -->
 
 <dl id="crypto"><dt><a href="/pkg/crypto/">crypto</a></dt>
   <dd>
     <p><!-- CL 231417, CL 225460 -->
       The <code>PrivateKey</code> and <code>PublicKey</code> types in the
-      <a href="/pkg/crypto/rsa"><code>crypto/rsa</code></a>,
-      <a href="/pkg/crypto/ecdsa"><code>crypto/ecdsa</code></a>, and
-      <a href="/pkg/crypto/ed25519"><code>crypto/ed25519</code></a> packages
+      <a href="/pkg/crypto/rsa/"><code>crypto/rsa</code></a>,
+      <a href="/pkg/crypto/ecdsa/"><code>crypto/ecdsa</code></a>, and
+      <a href="/pkg/crypto/ed25519/"><code>crypto/ed25519</code></a> packages
       now have an <code>Equal</code> method to compare keys for equivalence
       or to make type-safe interfaces for public keys. The method signature
       is compatible with
@@ -436,14 +449,14 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- crypto/rsa -->
 
-<dl id="crypto/tls"><dt><a href="/crypto/tls/">crypto/tls</a></dt>
+<dl id="crypto/tls"><dt><a href="/pkg/crypto/tls/">crypto/tls</a></dt>
   <dd>
     <p><!-- CL 214977 -->
       The new
       <a href="/pkg/crypto/tls/#Dialer"><code>Dialer</code></a>
       type and its
       <a href="/pkg/crypto/tls/#Dialer.DialContext"><code>DialContext</code></a>
-      method permits using a context to both connect and handshake with a TLS server.
+      method permit using a context to both connect and handshake with a TLS server.
     </p>
 
     <p><!-- CL 229122 -->
@@ -542,14 +555,68 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="crypto/x509/pkix"><dt><a href="/pkg/crypto/x509/pkix/">crypto/x509/pkix</a></dt>
   <dd>
-    <p><!-- CL 229864 -->
+    <p><!-- CL 229864, CL 240543 -->
       <a href="/pkg/crypto/x509/pkix/#Name.String"><code>Name.String</code></a>
       now prints non-standard attributes from
       <a href="/pkg/crypto/x509/pkix/#Name.Names"><code>Names</code></a> if
-      <a href="/pkg/crypto/x509/pkix/#Name.ExtraNames"><code>ExtraNames</code></a> is empty.
+      <a href="/pkg/crypto/x509/pkix/#Name.ExtraNames"><code>ExtraNames</code></a> is nil.
     </p>
   </dd>
 </dl><!-- crypto/x509/pkix -->
+
+<dl id="database/sql"><dt><a href="/pkg/database/sql/">database/sql</a></dt>
+  <dd>
+    <p><!-- CL 145758 -->
+      The new <a href="/pkg/database/sql/#DB.SetConnMaxIdleTime"><code>DB.SetConnMaxIdleTime</code></a>
+      method allows removing a connection from the connection pool after
+      it has been idle for a period of time, without regard to the total
+      lifespan of the connection.  The <a href="/pkg/database/sql/#DBStats.MaxIdleTimeClosed"><code>DBStats.MaxIdleTimeClosed</code></a>
+      field shows the total number of connections closed due to
+      <code>DB.SetConnMaxIdleTime</code>.
+    </p>
+
+    <p><!-- CL 214317 -->
+      The new <a href="/pkg/database/sql/#Row.Err"><code>Row.Err</code></a> getter
+      allows checking for query errors without calling
+      <code>Row.Scan</code>.
+    </p>
+  </dd>
+</dl><!-- database/sql -->
+
+<dl id="database/sql/driver"><dt><a href="/pkg/database/sql/driver/">database/sql/driver</a></dt>
+  <dd>
+    <p><!-- CL 174122 -->
+      The new <a href="/pkg/database/sql/driver/#Validator"><code>Validator</code></a>
+      interface may be implemented by <code>Conn</code> to allow drivers
+      to signal if a connection is valid or if it should be discarded.
+    </p>
+  </dd>
+</dl><!-- database/sql/driver -->
+
+<dl id="debug/pe"><dt><a href="/pkg/debug/pe/">debug/pe</a></dt>
+  <dd>
+    <p><!-- CL 222637 -->
+      The package now defines the
+      <code>IMAGE_FILE</code>, <code>IMAGE_SUBSYSTEM</code>,
+      and <code>IMAGE_DLLCHARACTERISTICS</code> constants used by the
+      PE file format.
+    </p>
+  </dd>
+</dl><!-- debug/pe -->
+
+<dl id="encoding/asn1"><dt><a href="/pkg/encoding/asn1/">encoding/asn1</a></dt>
+  <dd>
+    <p><!-- CL 226984 -->
+      <a href="/pkg/encoding/asn1/#Marshal"><code>Marshal</code></a> now sorts the components
+      of SET OF according to X.690 DER.
+    </p>
+
+    <p><!-- CL 227320 -->
+      <a href="/pkg/encoding/asn1/#Unmarshal"><code>Unmarshal</code></a> now rejects tags and
+      Object Identifiers which are not minimally encoded according to X.690 DER.
+    </p>
+  </dd>
+</dl><!-- encoding/asn1 -->
 
 <dl id="encoding/json"><dt><a href="/pkg/encoding/json/">encoding/json</a></dt>
   <dd>
@@ -559,32 +626,19 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
 
     <p><!-- CL 199837 -->
-      Introduce an internal limit to the maximum depth of nesting when decoding.
-      This reduces the possibility that a deeply nested input could use large quantities
-      of stack memory, or even cause a "goroutine stack exceeds limit" panic.
+      The package now has an internal limit to the maximum depth of
+      nesting when decoding. This reduces the possibility that a
+      deeply nested input could use large quantities of stack memory,
+      or even cause a "goroutine stack exceeds limit" panic.
     </p>
   </dd>
 </dl><!-- encoding/json -->
-
-<dl id="encoding/xml"><dt><a href="/pkg/encoding/xml/">encoding/xml</a></dt>
-  <dd>
-    <p><!-- CL 203417 -->
-      The encoder has always taken care to avoid using namespace prefixes beginning with
-      <code>xml</code>,
-      which are reserved by the XML specification.
-      Now, following the specification more closely,
-      that check is case-insensitive, so that prefixes beginning with
-      <code>XML</code>, <code>XmL</code>,
-      and so on are also avoided.
-    </p>
-  </dd>
-</dl><!-- encoding/xml -->
 
 <dl id="flag"><dt><a href="/pkg/flag/">flag</a></dt>
   <dd>
     <p><!-- CL 221427 -->
       When the flag package sees <code>-h</code> or <code>-help</code>, and
-      those flags are not defined, the flag package prints a usage message.
+      those flags are not defined, it now prints a usage message.
       If the <a href="/pkg/flag/#FlagSet"><code>FlagSet</code></a> was created with
       <a href="/pkg/flag/#ExitOnError"><code>ExitOnError</code></a>,
       <a href="/pkg/flag/#FlagSet.Parse"><code>FlagSet.Parse</code></a> would then
@@ -603,6 +657,30 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- fmt -->
+
+<dl id="go/format"><dt><a href="/pkg/go/format/">go/format</a></dt>
+  <dd>
+    <p><!-- golang.org/issue/37476, CL 231461, CL 240683 -->
+      The <a href="/pkg/go/format/#Source"><code>Source</code></a> and
+      <a href="/pkg/go/format/#Node"><code>Node</code></a> functions
+      now canonicalize number literal prefixes and exponents as part
+      of formatting Go source code. This matches the behavior of the
+      <a href="/pkg/cmd/gofmt/"><code>gofmt</code></a> command as it
+      was implemented <a href="/doc/go1.13#gofmt">since Go 1.13</a>.
+    </p>
+  </dd>
+</dl><!-- go/format -->
+
+<dl id="html/template"><dt><a href="/pkg/html/template/">html/template</a></dt>
+  <dd>
+    <p><!-- CL 226097 -->
+      The package now uses Unicode escapes (<code>\uNNNN</code>) in all
+      JavaScript and JSON contexts. This fixes escaping errors in
+      <code>application/ld+json</code> and <code>application/json</code>
+      contexts.
+    </p>
+  </dd>
+</dl><!-- html/template -->
 
 <dl id="io/ioutil"><dt><a href="/pkg/io/ioutil/">io/ioutil</a></dt>
   <dd>
@@ -625,6 +703,16 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- math/big -->
 
+<dl id="math/cmplx"><dt><a href="/pkg/math/cmplx/">math/cmplx</a></dt>
+  <dd>
+    <p><!-- CL 220689 -->
+      The functions in this package were updated to conform to the C99 standard
+      (Annex G IEC 60559-compatible complex arithmetic) with respect to handling
+      of special arguments such as infinity, NaN and signed zero.
+    </p>
+  </dd>
+</dl><!-- math/cmplx-->
+
 <dl id="net"><dt><a href="/pkg/net/">net</a></dt>
   <dd>
     <p><!-- CL 228645 -->
@@ -633,7 +721,7 @@ Do not send CLs removing the interior tags from such phrases.
       <code>Conn.SetReadDeadline</code>,
       or <code>Conn.SetWriteDeadline</code> methods, it will now
       return an error that is or wraps
-      <a href="/pkg/os#ErrDeadlineExceeded"><code>os.ErrDeadlineExceeded</code></a>.
+      <a href="/pkg/os/#ErrDeadlineExceeded"><code>os.ErrDeadlineExceeded</code></a>.
       This may be used to reliably detect whether an error is due to
       an exceeded deadline.
       Earlier releases recommended calling the <code>Timeout</code>
@@ -712,7 +800,7 @@ Do not send CLs removing the interior tags from such phrases.
       <a href="/pkg/os/#File.SetReadDeadline"><code>File.SetReadDeadline</code></a>,
       or <a href="/pkg/os/#File.SetWriteDeadline"><code>File.SetWriteDeadline</code></a>
       methods, it will now return an error that is or wraps
-      <a href="/pkg/os#ErrDeadlineExceeded"><code>os.ErrDeadlineExceeded</code></a>.
+      <a href="/pkg/os/#ErrDeadlineExceeded"><code>os.ErrDeadlineExceeded</code></a>.
       This may be used to reliably detect whether an error is due to
       an exceeded deadline.
       Earlier releases recommended calling the <code>Timeout</code>
@@ -727,6 +815,20 @@ Do not send CLs removing the interior tags from such phrases.
       this led to spurious failures, which became more common in Go
       1.14 with the addition of asynchronous preemption. Now this is
       handled transparently.
+    </p>
+
+    <p><!-- CL 229101 -->
+      The <a href="/pkg/os/#File"><code>os.File</code></a> type now
+      supports a <a href="/pkg/os/#File.ReadFrom"><code>ReadFrom</code></a>
+      method. This permits the use of the <code>copy_file_range</code>
+      system call on some systems when using
+      <a href="/pkg/io/#Copy"><code>io.Copy</code></a> to copy data
+      from one <code>os.File</code> to another. A consequence is that
+      <a href="/pkg/io/#CopyBuffer"><code>io.CopyBuffer</code></a>
+      will not always use the provided buffer when copying to a
+      <code>os.File</code>. If a program wants to force the use of
+      the provided buffer, it can be done by writing
+      <code>io.CopyBuffer(struct{ io.Writer }{dst}, src, buf)</code>.
     </p>
   </dd>
 </dl>
@@ -778,7 +880,7 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl>
 
-<dl id="pkg-runtime-pprof"><dt><a href="/pkg/runtime/pprof">runtime/pprof</a></dt>
+<dl id="pkg-runtime-pprof"><dt><a href="/pkg/runtime/pprof/">runtime/pprof</a></dt>
   <dd>
     <p><!-- CL 189318 -->
       The goroutine profile includes the profile labels associated with each goroutine
@@ -797,7 +899,7 @@ Do not send CLs removing the interior tags from such phrases.
       <a href="/pkg/strconv/#FormatComplex"><code>FormatComplex</code></a> converts a complex number into a string of the form (a+bi), where a and b are the real and imaginary parts.
     </p>
     <p>
-      <a href="/pkg/strconv/#ParseComplex"><code>ParseComplex</code></a> converts a string into a complex number of a specificed precision. <code>ParseComplex</code> accepts complex numbers in the format <code>N+Ni</code>.
+      <a href="/pkg/strconv/#ParseComplex"><code>ParseComplex</code></a> converts a string into a complex number of a specified precision. <code>ParseComplex</code> accepts complex numbers in the format <code>N+Ni</code>.
     </p>
   </dd>
 </dl><!-- strconv -->
@@ -863,12 +965,27 @@ Do not send CLs removing the interior tags from such phrases.
     <p><!-- CL 226877, golang.org/issue/35998 -->
        The new methods
        <a href="/pkg/testing/#T.TempDir"><code>T.TempDir</code></a> and
-       <a href="/pkg/testing/#B.TempDir"><code>B.TempDir</code></a> and
+       <a href="/pkg/testing/#B.TempDir"><code>B.TempDir</code></a>
        return temporary directories that are automatically cleaned up
        at the end of the test.
     </p>
+
+    <p><!-- CL 229085 -->
+      <code>go</code> <code>test</code> <code>-v</code> now groups output by
+      test name, rather than printing the test name on each line.
+    </p>
   </dd>
 </dl><!-- testing -->
+
+<dl id="text/template"><dt><a href="/pkg/text/template/">text/template</a></dt>
+  <dd>
+    <p><!-- CL 226097 -->
+      <a href="/pkg/text/template/#JSEscape"><code>JSEscape</code></a> now
+      consistently uses Unicode escapes (<code>\u00XX</code>), which are
+      compatible with JSON.
+    </p>
+  </dd>
+</dl><!-- text/template -->
 
 <dl id="time"><dt><a href="/pkg/time/">time</a></dt>
   <dd>

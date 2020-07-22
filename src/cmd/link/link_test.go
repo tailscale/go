@@ -541,6 +541,13 @@ func TestOldLink(t *testing.T) {
 
 	testenv.MustHaveGoBuild(t)
 
+	// Check that the old linker exists (we don't ship it in binary releases,
+	// see issue 39509).
+	cmd := exec.Command(testenv.GoToolPath(t), "tool", "-n", "oldlink")
+	if err := cmd.Run(); err != nil {
+		t.Skip("skipping because cannot find installed cmd/oldlink binary")
+	}
+
 	tmpdir, err := ioutil.TempDir("", "TestOldLink")
 	if err != nil {
 		t.Fatal(err)
@@ -553,7 +560,7 @@ func TestOldLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(testenv.GoToolPath(t), "run", "-gcflags=all=-go115newobj=false", "-asmflags=all=-go115newobj=false", "-ldflags=-go115newobj=false", src)
+	cmd = exec.Command(testenv.GoToolPath(t), "run", "-gcflags=all=-go115newobj=false", "-asmflags=all=-go115newobj=false", "-ldflags=-go115newobj=false", src)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Errorf("%v: %v:\n%s", cmd.Args, err, out)
 	}
@@ -744,5 +751,39 @@ func TestIndexMismatch(t *testing.T) {
 	}
 	if !bytes.Contains(out, []byte("fingerprint mismatch")) {
 		t.Errorf("did not see expected error message. out:\n%s", out)
+	}
+}
+
+func TestPErsrc(t *testing.T) {
+	// Test that PE rsrc section is handled correctly (issue 39658).
+	testenv.MustHaveGoBuild(t)
+
+	if runtime.GOARCH != "amd64" || runtime.GOOS != "windows" {
+		t.Skipf("this is a windows/amd64-only test")
+	}
+
+	tmpdir, err := ioutil.TempDir("", "TestPErsrc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	pkgdir := filepath.Join("testdata", "testPErsrc")
+	exe := filepath.Join(tmpdir, "a.exe")
+	cmd := exec.Command(testenv.GoToolPath(t), "build", "-o", exe)
+	cmd.Dir = pkgdir
+	// cmd.Env = append(os.Environ(), "GOOS=windows", "GOARCH=amd64") // uncomment if debugging in a cross-compiling environment
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("building failed: %v, output:\n%s", err, out)
+	}
+
+	// Check that the binary contains the rsrc data
+	b, err := ioutil.ReadFile(exe)
+	if err != nil {
+		t.Fatalf("reading output failed: %v", err)
+	}
+	if !bytes.Contains(b, []byte("Hello Gophers!")) {
+		t.Fatalf("binary does not contain expected content")
 	}
 }
