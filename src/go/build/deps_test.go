@@ -382,7 +382,7 @@ var depsRules = `
 	CGO, net !< CRYPTO-MATH;
 
 	# TLS, Prince of Dependencies.
-	CGO, CRYPTO-MATH, NET, container/list, encoding/hex, encoding/pem
+	CGO, CRYPTO-MATH, NET, container/list, encoding/hex, encoding/pem, compress/gzip
 	< golang.org/x/crypto/internal/subtle
 	< golang.org/x/crypto/chacha20
 	< golang.org/x/crypto/poly1305
