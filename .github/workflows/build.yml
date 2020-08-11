@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - tailscale
+      - 'tailscale.go1.15'
   pull_request:
     branches:
       - '*'
