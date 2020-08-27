@@ -1,0 +1,1 @@
+pkg net/http, type Transport struct, GetProxyConnectHeader func(context.Context, *url.URL, string) (Header, error)
