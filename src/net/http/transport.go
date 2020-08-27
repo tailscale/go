@@ -242,6 +242,12 @@ type Transport struct {
 	// proxies during CONNECT requests.
 	ProxyConnectHeader Header
 
+	// GetProxyConnectHeader is called to return headers to send to
+	// proxuURL during a CONNECT request to the target ip:port. If it returns an error, the Transport
+	// RoundTrip fails with that error. It can return (nil, nil) to not add headers.
+	// If GetProxyConnectHeader is non-nil, ProxyConnectHeader is ignored.
+	GetProxyConnectHeader func(ctx context.Context, proxyURL *url.URL, target string) (Header, error)
+
 	// MaxResponseHeaderBytes specifies a limit on how many
 	// response bytes are allowed in the server's response
 	// header.
@@ -313,6 +319,7 @@ func (t *Transport) Clone() *Transport {
 		ResponseHeaderTimeout:  t.ResponseHeaderTimeout,
 		ExpectContinueTimeout:  t.ExpectContinueTimeout,
 		ProxyConnectHeader:     t.ProxyConnectHeader.Clone(),
+		GetProxyConnectHeader:  t.GetProxyConnectHeader,
 		MaxResponseHeaderBytes: t.MaxResponseHeaderBytes,
 		ForceAttemptHTTP2:      t.ForceAttemptHTTP2,
 		WriteBufferSize:        t.WriteBufferSize,
@@ -1619,7 +1626,17 @@ func (t *Transport) dialConn(ctx context.Context, cm connectMethod) (pconn *pers
 		}
 	case cm.targetScheme == "https":
 		conn := pconn.conn
-		hdr := t.ProxyConnectHeader
+		var hdr Header
+		if t.GetProxyConnectHeader != nil {
+			var err error
+			hdr, err = t.GetProxyConnectHeader(ctx, cm.proxyURL, cm.targetAddr)
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+		} else {
+			hdr = t.ProxyConnectHeader
+		}
 		if hdr == nil {
 			hdr = make(Header)
 		}
