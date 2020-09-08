@@ -66,6 +66,104 @@ func HammerMutex(m *Mutex, loops int, cdone chan bool) {
 	cdone <- true
 }
 
+func wantPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		recover()
+	}()
+	fn()
+	t.Fatal("failed to panic")
+}
+
+type lockAsserter interface {
+	Lock()
+	AssertLocked()
+	Unlock()
+}
+
+func testAssertLocked(t *testing.T, m lockAsserter) {
+	wantPanic(t, func() { m.AssertLocked() })
+	m.Lock()
+	m.AssertLocked()
+	m.Unlock()
+	wantPanic(t, func() { m.AssertLocked() })
+	// Test correct handling of mutex with waiter.
+	m.Lock()
+	m.AssertLocked()
+	go func() {
+		m.Lock()
+		m.Unlock()
+	}()
+	// Give the goroutine above a few moments to get started.
+	// The test will pass whether or not we win the race,
+	// but we want to run sometimes, to get the test coverage.
+	time.Sleep(10 * time.Millisecond)
+	m.AssertLocked()
+}
+
+func TestAssertLocked(t *testing.T) {
+	t.Run("Mutex", func(t *testing.T) { testAssertLocked(t, new(Mutex)) })
+	t.Run("RWMutex", func(t *testing.T) {
+		t.Run("Lock", func(t *testing.T) { testAssertLocked(t, new(RWMutex)) })
+		t.Run("RLock", func(t *testing.T) {
+			m := new(RWMutex)
+			wantPanic(t, func() { m.AssertRLocked() })
+
+			m.Lock()
+			m.AssertRLocked()
+			m.Unlock()
+
+			m.RLock()
+			m.AssertRLocked()
+			m.RUnlock()
+
+			wantPanic(t, func() { m.AssertRLocked() })
+
+			// Test correct handling of mutex with waiter.
+			m.RLock()
+			m.AssertRLocked()
+			go func() {
+				m.RLock()
+				m.RUnlock()
+			}()
+			// Give the goroutine above a few moments to get started.
+			// The test will pass whether or not we win the race,
+			// but we want to run sometimes, to get the test coverage.
+			time.Sleep(10 * time.Millisecond)
+			m.AssertRLocked()
+			m.RUnlock()
+
+			// Test correct handling of rlock with write waiter.
+			m.RLock()
+			m.AssertRLocked()
+			go func() {
+				m.Lock()
+				m.Unlock()
+			}()
+			// Give the goroutine above a few moments to get started.
+			// The test will pass whether or not we win the race,
+			// but we want to run sometimes, to get the test coverage.
+			time.Sleep(10 * time.Millisecond)
+			m.AssertRLocked()
+			m.RUnlock()
+
+			// Test correct handling of rlock with other rlocks.
+			// This is a bit racy, but losing the race hurts nothing,
+			// and winning the race means correct test coverage.
+			m.RLock()
+			m.AssertRLocked()
+			go func() {
+				m.RLock()
+				time.Sleep(10 * time.Millisecond)
+				m.RUnlock()
+			}()
+			time.Sleep(5 * time.Millisecond)
+			m.AssertRLocked()
+			m.RUnlock()
+		})
+	})
+}
+
 func TestMutex(t *testing.T) {
 	if n := runtime.SetMutexProfileFraction(1); n != 0 {
 		t.Logf("got mutexrate %d expected 0", n)

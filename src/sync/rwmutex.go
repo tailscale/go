@@ -55,6 +55,21 @@ func (rw *RWMutex) RLock() {
 	}
 }
 
+// AssertLocked panics if rw is not locked for reading or writing.
+func (rw *RWMutex) AssertRLocked() {
+	if race.Enabled {
+		_ = rw.w.state
+		race.Disable()
+		defer race.Enable()
+	}
+	if atomic.LoadInt32(&rw.readerCount) != 0 {
+		// There are readers present or writers pending, so someone has a read lock.
+		return
+	}
+	// No readers
+	rw.w.AssertLocked()
+}
+
 // RUnlock undoes a single RLock call;
 // it does not affect other simultaneous readers.
 // It is a run-time error if rw is not locked for reading
@@ -107,6 +122,16 @@ func (rw *RWMutex) Lock() {
 		race.Acquire(unsafe.Pointer(&rw.readerSem))
 		race.Acquire(unsafe.Pointer(&rw.writerSem))
 	}
+}
+
+// AssertLocked panics if rw is not locked for writing.
+func (rw *RWMutex) AssertLocked() {
+	if race.Enabled {
+		_ = rw.w.state
+		race.Disable()
+		defer race.Enable()
+	}
+	rw.w.AssertLocked()
 }
 
 // Unlock unlocks rw for writing. It is a run-time error if rw is

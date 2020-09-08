@@ -170,6 +170,13 @@ func (m *Mutex) lockSlow() {
 	}
 }
 
+// AssertLocked panics if m is not locked.
+func (m *Mutex) AssertLocked() {
+	if atomic.LoadInt32(&m.state)&mutexLocked == 0 {
+		panic("mutex is not locked")
+	}
+}
+
 // Unlock unlocks m.
 // It is a run-time error if m is not locked on entry to Unlock.
 //
