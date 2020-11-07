@@ -471,10 +471,10 @@ func typecheck1(n *Node, top int) (res *Node) {
 			return n
 		}
 		if l.Type.NotInHeap() {
-			yyerror("go:notinheap map key not allowed")
+			yyerror("incomplete (or unallocatable) map key not allowed")
 		}
 		if r.Type.NotInHeap() {
-			yyerror("go:notinheap map value not allowed")
+			yyerror("incomplete (or unallocatable) map value not allowed")
 		}
 
 		setTypeNode(n, types.NewMap(l.Type, r.Type))
@@ -491,7 +491,7 @@ func typecheck1(n *Node, top int) (res *Node) {
 			return n
 		}
 		if l.Type.NotInHeap() {
-			yyerror("chan of go:notinheap type not allowed")
+			yyerror("chan of incomplete (or unallocatable) type not allowed")
 		}
 
 		setTypeNode(n, types.NewChan(l.Type, n.TChanDir()))
@@ -2068,12 +2068,6 @@ func typecheck1(n *Node, top int) (res *Node) {
 		ok |= ctxStmt
 		n.Left = typecheck(n.Left, ctxType)
 		checkwidth(n.Left.Type)
-		if n.Left.Type != nil && n.Left.Type.NotInHeap() && n.Left.Name.Param.Pragma&NotInHeap == 0 {
-			// The type contains go:notinheap types, so it
-			// must be marked as such (alternatively, we
-			// could silently propagate go:notinheap).
-			yyerror("type %v must be go:notinheap", n.Left.Type)
-		}
 	}
 
 	t := n.Type
@@ -2508,7 +2502,7 @@ func lookdot(n *Node, t *types.Type, dostrcmp int) *types.Field {
 				n.Left = nod(OADDR, n.Left, nil)
 				n.Left.SetImplicit(true)
 				n.Left = typecheck(n.Left, ctxType|ctxExpr)
-			} else if tt.IsPtr() && !rcvr.IsPtr() && types.Identical(tt.Elem(), rcvr) {
+			} else if tt.IsPtr() && (!rcvr.IsPtr() || rcvr.IsPtr() && rcvr.Elem().NotInHeap()) && types.Identical(tt.Elem(), rcvr) {
 				n.Left = nod(ODEREF, n.Left, nil)
 				n.Left.SetImplicit(true)
 				n.Left = typecheck(n.Left, ctxType|ctxExpr)
