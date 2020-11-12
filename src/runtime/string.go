@@ -102,6 +102,16 @@ func slicebytetostring(buf *tmpBuf, ptr *byte, n int) (str string) {
 		stringStructOf(&str).len = 1
 		return
 	}
+	if n >= 16 {
+		p := unsafe.Pointer(ptr)
+		if *(*uint32)(p) == 0 && *(*uint64)(add(p, 8)) == 0 {
+			println("possible memory corruption at", p)
+			pc, sp := getcallerpc(), getcallersp()
+			systemstack(func() {
+				gentraceback(pc, sp, 0, getg(), 0, nil, 100, nil, nil, 0)
+			})
+		}
+	}
 
 	var p unsafe.Pointer
 	if buf != nil && n <= len(buf) {
@@ -163,6 +173,16 @@ func slicebytetostringtmp(ptr *byte, n int) (str string) {
 }
 
 func stringtoslicebyte(buf *tmpBuf, s string) []byte {
+	if len(s) >= 16 {
+		p := stringStructOf(&s).str
+		if *(*uint32)(p) == 0 && *(*uint64)(add(p, 8)) == 0 {
+			println("possible memory corruption at", p)
+			pc, sp := getcallerpc(), getcallersp()
+			systemstack(func() {
+				gentraceback(pc, sp, 0, getg(), 0, nil, 100, nil, nil, 0)
+			})
+		}
+	}
 	var b []byte
 	if buf != nil && len(s) <= len(buf) {
 		*buf = tmpBuf{}
