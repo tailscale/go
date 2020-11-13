@@ -1010,10 +1010,42 @@ func (s *state) rawLoad(t *types.Type, src *ssa.Value) *ssa.Value {
 }
 
 func (s *state) store(t *types.Type, dst, val *ssa.Value) {
+	if isTroubleType(t) {
+		fmt.Printf("storing padded 4-4-8 type: %v\n", t)
+	}
 	s.vars[&memVar] = s.newValue3A(ssa.OpStore, types.TypeMem, t, dst, val, s.mem())
 }
 
+func isTroubleType(t *types.Type) bool {
+	if os.Getenv("TROUBLE") == "" {
+		return false
+	}
+	if t.Size() != 16 {
+		return false
+	}
+	if !t.IsStruct() {
+		return false
+	}
+	ff := t.Fields().Slice()
+	for _, f := range ff {
+		lo, hi := f.Offset, f.Offset+f.Type.Size()-1
+		// Check whether (lo, hi) overlaps (4, 7).
+		if (lo < 4 && 4 < hi) || (lo < 7 && 7 < hi) {
+			// If it overlaps, and it's not a blank field,
+			// then writes of that type will touch bytes 4-8.
+			// Therefore it is not the type we are looking for.
+			if !f.Sym.IsBlank() {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (s *state) zero(t *types.Type, dst *ssa.Value) {
+	if isTroubleType(t) {
+		fmt.Printf("zeroing padded 4-4-8 type: %v\n", t)
+	}
 	s.instrument(t, dst, true)
 	store := s.newValue2I(ssa.OpZero, types.TypeMem, t.Size(), dst, s.mem())
 	store.Aux = t
@@ -1021,6 +1053,9 @@ func (s *state) zero(t *types.Type, dst *ssa.Value) {
 }
 
 func (s *state) move(t *types.Type, dst, src *ssa.Value) {
+	if isTroubleType(t) {
+		fmt.Printf("moving padded 4-4-8 type: %v\n", t)
+	}
 	s.instrument(t, src, false)
 	s.instrument(t, dst, true)
 	store := s.newValue3I(ssa.OpMove, types.TypeMem, t.Size(), dst, src, s.mem())
