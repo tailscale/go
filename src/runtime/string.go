@@ -103,16 +103,7 @@ func slicebytetostring(buf *tmpBuf, ptr *byte, n int) (str string) {
 		return
 	}
 
-	var p unsafe.Pointer
-	if buf != nil && n <= len(buf) {
-		p = unsafe.Pointer(buf)
-	} else {
-		p = mallocgc(uintptr(n), nil, false)
-	}
-	stringStructOf(&str).str = p
-	stringStructOf(&str).len = n
-	memmove(p, unsafe.Pointer(ptr), uintptr(n))
-	return
+	return allocAndCopyString(ptr, n)
 }
 
 // stringDataOnStack reports whether the string's data is

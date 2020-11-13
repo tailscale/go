@@ -53,6 +53,7 @@ const (
 //go:cgo_import_dynamic runtime._TlsAlloc TlsAlloc%0 "kernel32.dll"
 //go:cgo_import_dynamic runtime._VirtualAlloc VirtualAlloc%4 "kernel32.dll"
 //go:cgo_import_dynamic runtime._VirtualFree VirtualFree%3 "kernel32.dll"
+//go:cgo_import_dynamic runtime._VirtualProtect VirtualProtect%4 "kernel32.dll"
 //go:cgo_import_dynamic runtime._VirtualQuery VirtualQuery%3 "kernel32.dll"
 //go:cgo_import_dynamic runtime._WaitForSingleObject WaitForSingleObject%2 "kernel32.dll"
 //go:cgo_import_dynamic runtime._WaitForMultipleObjects WaitForMultipleObjects%4 "kernel32.dll"
@@ -106,6 +107,7 @@ var (
 	_TlsAlloc,
 	_VirtualAlloc,
 	_VirtualFree,
+	_VirtualProtect,
 	_VirtualQuery,
 	_WaitForSingleObject,
 	_WaitForMultipleObjects,
