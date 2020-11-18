@@ -75,10 +75,16 @@ type GoStringer interface {
 type buffer []byte
 
 func (b *buffer) write(p []byte) {
+	if len(p) >= 16 && string(p[:4]) == "\x00\x00\x00\x00" && string(p[4:8]) != "\x00\x00\x00\x00" && string(p[8:16]) == "\x00\x00\x00\x00\x00\x00\x00\x00" {
+		panic("possible memory corruption")
+	}
 	*b = append(*b, p...)
 }
 
 func (b *buffer) writeString(s string) {
+	if len(s) >= 16 && s[:4] == "\x00\x00\x00\x00" && s[4:8] != "\x00\x00\x00\x00" && s[8:16] == "\x00\x00\x00\x00\x00\x00\x00\x00" {
+		panic("possible memory corruption")
+	}
 	*b = append(*b, s...)
 }
 

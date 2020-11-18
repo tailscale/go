@@ -16,6 +16,10 @@ const tmpStringBufSize = 32
 
 type tmpBuf [tmpStringBufSize]byte
 
+func corruptStr(s string) bool {
+	return len(s) >= 16 && s[:4] == "\x00\x00\x00\x00" && s[4:8] != "\x00\x00\x00\x00" && s[8:16] == "\x00\x00\x00\x00\x00\x00\x00\x00"
+}
+
 // concatstrings implements a Go string concatenation x+y+z+...
 // The operands are passed in the slice a.
 // If buf != nil, the compiler has determined that the result does not
@@ -49,6 +53,14 @@ func concatstrings(buf *tmpBuf, a []string) string {
 	}
 	s, b := rawstringtmp(buf, l)
 	for _, x := range a {
+		if corruptStr(x) {
+			println("possible memory corruption at ...")
+			pc, sp := getcallerpc(), getcallersp()
+			systemstack(func() {
+				gentraceback(pc, sp, 0, getg(), 0, nil, 100, nil, nil, 0)
+			})
+			throw("possible memory corruption ^^")
+		}
 		copy(b, x)
 		b = b[len(x):]
 	}
@@ -110,6 +122,7 @@ func slicebytetostring(buf *tmpBuf, ptr *byte, n int) (str string) {
 			systemstack(func() {
 				gentraceback(pc, sp, 0, getg(), 0, nil, 100, nil, nil, 0)
 			})
+			throw("possible memory corruption ^^")
 		}
 	}
 
@@ -181,6 +194,7 @@ func stringtoslicebyte(buf *tmpBuf, s string) []byte {
 			systemstack(func() {
 				gentraceback(pc, sp, 0, getg(), 0, nil, 100, nil, nil, 0)
 			})
+			throw("possible memory corruption ^^")
 		}
 	}
 	var b []byte
