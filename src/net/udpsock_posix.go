@@ -42,15 +42,22 @@ func (a *UDPAddr) toLocal(net string) sockaddr {
 	return &UDPAddr{loopbackIP(net), a.Port, a.Zone}
 }
 
-func (c *UDPConn) readFrom(b []byte, addr *UDPAddr) (int, *UDPAddr, error) {
-	n, sa, err := c.fd.readFrom(b)
-	switch sa := sa.(type) {
-	case *syscall.SockaddrInet4:
-		*addr = UDPAddr{IP: sa.Addr[0:], Port: sa.Port}
-	case *syscall.SockaddrInet6:
-		*addr = UDPAddr{IP: sa.Addr[0:], Port: sa.Port, Zone: zoneCache.name(int(sa.ZoneId))}
+func (c *UDPConn) readFrom(b []byte, a *UDPAddr) (n int, addr *UDPAddr, err error) {
+	switch c.fd.family {
+	case syscall.AF_INET:
+		var from syscall.SockaddrInet4
+		n, err = c.fd.readFromInet4(b, &from)
+		ipbuf := make([]byte, 4)
+		copy(ipbuf, from.Addr[:])
+		*a = UDPAddr{IP: ipbuf, Port: from.Port}
+	case syscall.AF_INET6:
+		var from syscall.SockaddrInet6
+		n, err = c.fd.readFromInet6(b, &from)
+		ipbuf := make([]byte, 16)
+		copy(ipbuf, from.Addr[:])
+		*a = UDPAddr{IP: ipbuf, Port: from.Port, Zone: zoneCache.name(int(from.ZoneId))}
 	}
-	return n, addr, err
+	return n, a, err
 }
 
 func (c *UDPConn) readMsg(b, oob []byte) (n, oobn, flags int, addr *UDPAddr, err error) {

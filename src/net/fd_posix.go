@@ -63,6 +63,18 @@ func (fd *netFD) readFrom(p []byte) (n int, sa syscall.Sockaddr, err error) {
 	return n, sa, wrapSyscallError(readFromSyscallName, err)
 }
 
+func (fd *netFD) readFromInet4(p []byte, from *syscall.SockaddrInet4) (n int, err error) {
+	n, err = fd.pfd.ReadFromInet4(p, from)
+	runtime.KeepAlive(fd)
+	return n, wrapSyscallError(readFromSyscallName, err)
+}
+
+func (fd *netFD) readFromInet6(p []byte, from *syscall.SockaddrInet6) (n int, err error) {
+	n, err = fd.pfd.ReadFromInet6(p, from)
+	runtime.KeepAlive(fd)
+	return n, wrapSyscallError(readFromSyscallName, err)
+}
+
 func (fd *netFD) readMsg(p []byte, oob []byte) (n, oobn, flags int, sa syscall.Sockaddr, err error) {
 	n, oobn, flags, sa, err = fd.pfd.ReadMsg(p, oob)
 	runtime.KeepAlive(fd)
