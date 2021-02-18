@@ -1,0 +1,112 @@
+name: Build toolchain
+
+on:
+  push:
+    branches:
+      - tailscale
+      - 'tailscale.go1.15'
+      - 'tailscale.go1.16'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+    - name: test
+      run: cd src && ./all.bash
+
+  linux:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+    - name: build
+      run: cd src && ./make.bash
+    - name: trim unnecessary bits
+      run: |
+        rm -rf pkg/*_*
+        find . -type d -name 'testdata' -print0 | xargs -0 rm -rf
+        find . -name '*_test.go' -delete
+    - name: archive
+      run: cd .. && tar --exclude-vcs -zcf linux.tar.gz go
+    - name: save
+      uses: actions/upload-artifact@v1
+      with:
+        name: linux
+        path: ../linux.tar.gz
+
+  darwin:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+    - name: build
+      run: cd src && ./make.bash
+      env:
+        GOOS: darwin
+    - name: trim unnecessary bits
+      run: |
+        rm -rf pkg/*_* pkg/tool/linux_amd64 bin/go bin/gofmt
+        mv bin/darwin_amd64/* bin/
+        find . -type d -name 'testdata' -print0 | xargs -0 rm -rf
+        find . -name '*_test.go' -delete
+    - name: archive
+      run: cd .. && tar --exclude-vcs -zcf darwin.tar.gz go
+    - name: save
+      uses: actions/upload-artifact@v1
+      with:
+        name: darwin
+        path: ../darwin.tar.gz
+
+  release:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: [test, linux, darwin]
+    steps:
+    - name: download linux
+      uses: actions/download-artifact@v1
+      with:
+        name: linux
+    - name: download darwin
+      uses: actions/download-artifact@v1
+      with:
+        name: darwin
+    - name: create release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        # Release name can't be the same as tag name, sigh
+        tag_name: build-${{ github.sha }}
+        release_name: ${{ github.sha }}
+        draft: false
+        prerelease: true
+    - name: upload linux tarball
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: linux/linux.tar.gz
+        asset_name: linux.tar.gz
+        asset_content_type: application/gzip
+    - name: upload darwin tarball
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: darwin/darwin.tar.gz
+        asset_name: darwin.tar.gz
+        asset_content_type: application/gzip
+    - name: checkout
+      uses: actions/checkout@v2
+    - name: Delete older builds
+      run: ./.github/workflows/prune_old_builds.sh "${{ secrets.GITHUB_TOKEN }}"
