@@ -8,6 +8,7 @@ package poll
 
 import (
 	"io"
+	"reflect"
 	"sync/atomic"
 	"syscall"
 )
@@ -341,6 +342,14 @@ func (fd *FD) WriteTo(p []byte, sa syscall.Sockaddr) (int, error) {
 			continue
 		}
 		if err == syscall.EAGAIN && fd.pd.pollable() {
+			switch sa := sa.(type) {
+			case *syscall.SockaddrInet4:
+				println("EAGAIN during WriteTo4(", fd.Sysfd, "):", sa.Addr[0], ".", sa.Addr[1], ".", sa.Addr[2], ".", sa.Addr[3], ":", sa.Port, "[", len(p), "] bytes")
+			case *syscall.SockaddrInet6:
+				println("EAGAIN during WriteTo6(", fd.Sysfd, "):", sa.Addr[:], ":", sa.Port, "[", len(p), "] bytes")
+			default:
+				println("EAGAIN during WriteTo?(", fd.Sysfd, "):", reflect.TypeOf(sa).String(), "[", len(p), "] bytes")
+			}
 			if err = fd.pd.waitWrite(fd.isFile); err == nil {
 				continue
 			}
