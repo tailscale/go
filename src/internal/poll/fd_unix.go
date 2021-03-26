@@ -329,6 +329,10 @@ func (fd *FD) Pwrite(p []byte, off int64) (int, error) {
 
 // WriteTo wraps the sendto network call.
 func (fd *FD) WriteTo(p []byte, sa syscall.Sockaddr) (int, error) {
+	err := syscall.Sendto(fd.Sysfd, p, 0, sa)
+	if err == nil {
+		return len(p), nil
+	}
 	if err := fd.writeLock(); err != nil {
 		return 0, err
 	}
