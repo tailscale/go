@@ -7642,6 +7642,9 @@ func (cc *http2ClientConn) roundTrip(req *Request) (res *Response, gotErrAfterRe
 			// we can keep it.
 			bodyWriter.cancel()
 			cs.abortRequestBodyWrite(http2errStopReqBodyWrite)
+			if hasBody && !bodyWritten {
+				<-bodyWriter.resc
+			}
 		}
 		if re.err != nil {
 			cc.forgetStreamID(cs.ID)
@@ -7662,6 +7665,7 @@ func (cc *http2ClientConn) roundTrip(req *Request) (res *Response, gotErrAfterRe
 			} else {
 				bodyWriter.cancel()
 				cs.abortRequestBodyWrite(http2errStopReqBodyWriteAndCancel)
+				<-bodyWriter.resc
 			}
 			cc.forgetStreamID(cs.ID)
 			return nil, cs.getStartedWrite(), http2errTimeout
@@ -7671,6 +7675,7 @@ func (cc *http2ClientConn) roundTrip(req *Request) (res *Response, gotErrAfterRe
 			} else {
 				bodyWriter.cancel()
 				cs.abortRequestBodyWrite(http2errStopReqBodyWriteAndCancel)
+				<-bodyWriter.resc
 			}
 			cc.forgetStreamID(cs.ID)
 			return nil, cs.getStartedWrite(), ctx.Err()
@@ -7680,6 +7685,7 @@ func (cc *http2ClientConn) roundTrip(req *Request) (res *Response, gotErrAfterRe
 			} else {
 				bodyWriter.cancel()
 				cs.abortRequestBodyWrite(http2errStopReqBodyWriteAndCancel)
+				<-bodyWriter.resc
 			}
 			cc.forgetStreamID(cs.ID)
 			return nil, cs.getStartedWrite(), http2errRequestCanceled
@@ -7689,6 +7695,7 @@ func (cc *http2ClientConn) roundTrip(req *Request) (res *Response, gotErrAfterRe
 			// forgetStreamID.
 			return nil, cs.getStartedWrite(), cs.resetErr
 		case err := <-bodyWriter.resc:
+			bodyWritten = true
 			// Prefer the read loop's response, if available. Issue 16102.
 			select {
 			case re := <-readLoopResCh:
@@ -7699,7 +7706,6 @@ func (cc *http2ClientConn) roundTrip(req *Request) (res *Response, gotErrAfterRe
 				cc.forgetStreamID(cs.ID)
 				return nil, cs.getStartedWrite(), err
 			}
-			bodyWritten = true
 			if d := cc.responseHeaderTimeout(); d != 0 {
 				timer := time.NewTimer(d)
 				defer timer.Stop()
@@ -9121,7 +9127,9 @@ func (t *http2Transport) getBodyWriterState(cs *http2clientStream, body io.Reade
 
 func (s http2bodyWriterState) cancel() {
 	if s.timer != nil {
-		s.timer.Stop()
+		if s.timer.Stop() {
+			s.resc <- nil
+		}
 	}
 }
 
