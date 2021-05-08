@@ -149,6 +149,14 @@ func deepValueEqual(v1, v2 Value, visited map[visit]bool) bool {
 		}
 		// Can't do better than this:
 		return false
+	case Int, Int8, Int16, Int32, Int64:
+		return v1.Int() == v2.Int()
+	case Uint, Uint8, Uint16, Uint32, Uint64, Uintptr:
+		return v1.Uint() == v2.Uint()
+	case String:
+		return v1.String() == v2.String()
+	case Bool:
+		return v1.Bool() == v2.Bool()
 	default:
 		// Normal equality suffices
 		return valueInterface(v1, false) == valueInterface(v2, false)
