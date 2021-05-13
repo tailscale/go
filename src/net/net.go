@@ -85,6 +85,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -169,6 +170,7 @@ type Conn interface {
 
 type conn struct {
 	fd *netFD
+	sa atomic.Value // of syscall.Sockaddr
 }
 
 func (c *conn) ok() bool { return c != nil && c.fd != nil }

@@ -192,7 +192,7 @@ func (c *UnixConn) WriteMsgUnix(b, oob []byte, addr *UnixAddr) (n, oobn int, err
 	return
 }
 
-func newUnixConn(fd *netFD) *UnixConn { return &UnixConn{conn{fd}} }
+func newUnixConn(fd *netFD) *UnixConn { return &UnixConn{conn{fd: fd}} }
 
 // DialUnix acts like Dial for Unix networks.
 //

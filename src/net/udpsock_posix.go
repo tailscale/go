@@ -72,9 +72,33 @@ func (c *UDPConn) writeTo(b []byte, addr *UDPAddr) (int, error) {
 	if addr == nil {
 		return 0, errMissingAddress
 	}
-	sa, err := addr.sockaddr(c.fd.family)
-	if err != nil {
-		return 0, err
+	// If we're writing to the same addr as last time,
+	// we can re-use the sockaddr, which avoids an allocation.
+	sa, _ := c.sa.Load().(syscall.Sockaddr)
+	if sa != nil {
+		// If sa doesn't match addr, nil it out.
+		switch sa := sa.(type) {
+		case *syscall.SockaddrInet4:
+			if !IP(sa.Addr[:]).Equal(addr.IP.To4()) || addr.Port != sa.Port {
+				sa = nil
+			}
+		case *syscall.SockaddrInet6:
+			if !IP(sa.Addr[:]).Equal(addr.IP.To16()) || addr.Port != sa.Port || sa.ZoneId != uint32(zoneCache.index(addr.Zone)) {
+				sa = nil
+			}
+		default:
+			sa = nil
+		}
+	}
+	if sa == nil {
+		// Unable to re-use a sockaddr.
+		// Allocate a new one and store for next time.
+		var err error
+		sa, err = addr.sockaddr(c.fd.family)
+		if err != nil {
+			return 0, err
+		}
+		c.sa.Store(sa)
 	}
 	return c.fd.writeTo(b, sa)
 }

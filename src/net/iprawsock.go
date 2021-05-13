@@ -199,7 +199,7 @@ func (c *IPConn) WriteMsgIP(b, oob []byte, addr *IPAddr) (n, oobn int, err error
 	return
 }
 
-func newIPConn(fd *netFD) *IPConn { return &IPConn{conn{fd}} }
+func newIPConn(fd *netFD) *IPConn { return &IPConn{conn{fd: fd}} }
 
 // DialIP acts like Dial for IP networks.
 //

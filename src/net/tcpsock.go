@@ -191,7 +191,7 @@ func (c *TCPConn) SetNoDelay(noDelay bool) error {
 }
 
 func newTCPConn(fd *netFD) *TCPConn {
-	c := &TCPConn{conn{fd}}
+	c := &TCPConn{conn{fd: fd}}
 	setNoDelay(c.fd, true)
 	return c
 }

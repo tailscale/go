@@ -199,7 +199,7 @@ func (c *UDPConn) WriteMsgUDP(b, oob []byte, addr *UDPAddr) (n, oobn int, err er
 	return
 }
 
-func newUDPConn(fd *netFD) *UDPConn { return &UDPConn{conn{fd}} }
+func newUDPConn(fd *netFD) *UDPConn { return &UDPConn{conn{fd: fd}} }
 
 // DialUDP acts like Dial for UDP networks.
 //
