@@ -7191,6 +7191,48 @@ func TestMapIterNilMap(t *testing.T) {
 	}
 }
 
+func TestMapIterReset(t *testing.T) {
+	iter := new(MapIter)
+
+	// Use of zero iterator should panic.
+	func() {
+		defer func() { recover() }()
+		iter.Next()
+		t.Fatal("Next did not panic")
+	}()
+
+	// Reset to new Map should work.
+	m := map[string]int{"one": 1, "two": 2, "three": 3}
+	iter.Reset(ValueOf(m))
+	if got, want := iterateToString(iter), `[one: 1, three: 3, two: 2]`; got != want {
+		t.Errorf("iterator returned %s (after sorting), want %s", got, want)
+	}
+
+	// Reset to Zero value should work, but iterating over it should panic.
+	iter.Reset(Value{})
+	func() {
+		defer func() { recover() }()
+		iter.Next()
+		t.Fatal("Next did not panic")
+	}()
+
+	// Reset to a diferent Map with different types should work.
+	m2 := map[int]string{1: "one", 2: "two", 3: "three"}
+	iter.Reset(ValueOf(m2))
+	if got, want := iterateToString(iter), `[1: one, 2: two, 3: three]`; got != want {
+		t.Errorf("iterator returned %s (after sorting), want %s", got, want)
+	}
+
+	// Reset should not allocate.
+	n := int(testing.AllocsPerRun(10, func() {
+		iter.Reset(ValueOf(m2))
+		iter.Reset(Value{})
+	}))
+	if n > 0 {
+		t.Errorf("MapIter.Reset allocated %d times", n)
+	}
+}
+
 func TestMapIterSafety(t *testing.T) {
 	// Using a zero MapIter causes a panic, but not a crash.
 	func() {
