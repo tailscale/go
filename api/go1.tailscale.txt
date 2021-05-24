@@ -1,3 +1,4 @@
 pkg net/http, type Transport struct, OnProxyConnectResponse func(context.Context, *url.URL, *Request, *Response) error
 pkg reflect, method (*MapIter) SetKey(Value)
 pkg reflect, method (*MapIter) SetValue(Value)
+pkg reflect, method (*MapIter) Reset(Value)
