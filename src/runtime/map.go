@@ -159,8 +159,8 @@ type bmap struct {
 }
 
 // A hash iteration structure.
-// If you modify hiter, also change cmd/compile/internal/gc/reflect.go to indicate
-// the layout of this structure.
+// If you modify hiter, also change cmd/compile/internal/reflectdata/reflect.go
+// and reflect/value.go to match the layout of this structure.
 type hiter struct {
 	key         unsafe.Pointer // Must be in first position.  Write nil to indicate iteration end (see cmd/compile/internal/gc/range.go).
 	elem        unsafe.Pointer // Must be in second position (see cmd/compile/internal/gc/range.go).
@@ -1335,10 +1335,8 @@ func reflect_mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
 }
 
 //go:linkname reflect_mapiterinit reflect.mapiterinit
-func reflect_mapiterinit(t *maptype, h *hmap) *hiter {
-	it := new(hiter)
+func reflect_mapiterinit(t *maptype, h *hmap, it *hiter) {
 	mapiterinit(t, h, it)
-	return it
 }
 
 //go:linkname reflect_mapiternext reflect.mapiternext

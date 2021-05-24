@@ -1212,7 +1212,8 @@ func (v Value) MapKeys() []Value {
 	if m != nil {
 		mlen = maplen(m)
 	}
-	it := mapiterinit(v.typ, m)
+	it := unsafe.Pointer(new(hiter))
+	mapiterinit(v.typ, m, it)
 	a := make([]Value, mlen)
 	var i int
 	for i = 0; i < len(a); i++ {
@@ -1229,11 +1230,34 @@ func (v Value) MapKeys() []Value {
 	return a[:i]
 }
 
+// hiter's structure matches runtime.hiter's structure.
+// Having a clone here allows us to embed a map iterator
+// inside type MapIter so that MapIters can be re-used
+// without doing any allocations.
+type hiter struct {
+	key         unsafe.Pointer
+	elem        unsafe.Pointer
+	t           unsafe.Pointer
+	h           unsafe.Pointer
+	buckets     unsafe.Pointer
+	bptr        unsafe.Pointer
+	overflow    *[]unsafe.Pointer
+	oldoverflow *[]unsafe.Pointer
+	startBucket uintptr
+	offset      uint8
+	wrapped     bool
+	B           uint8
+	i           uint8
+	bucket      uintptr
+	checkBucket uintptr
+}
+
 // A MapIter is an iterator for ranging over a map.
 // See Value.MapRange.
 type MapIter struct {
-	m  Value
-	it unsafe.Pointer
+	m     Value
+	it    unsafe.Pointer // nil or points to hiter field
+	hiter hiter
 }
 
 // Key returns the key of the iterator's current map entry.
@@ -1319,7 +1343,8 @@ func (it *MapIter) SetValue(dst Value) {
 // calls to Key, Value, or Next will panic.
 func (it *MapIter) Next() bool {
 	if it.it == nil {
-		it.it = mapiterinit(it.m.typ, it.m.pointer())
+		it.it = unsafe.Pointer(&it.hiter)
+		mapiterinit(it.m.typ, it.m.pointer(), it.it)
 	} else {
 		if mapiterkey(it.it) == nil {
 			panic("MapIter.Next called on exhausted iterator")
@@ -2835,10 +2860,8 @@ func mapassign(t *rtype, m unsafe.Pointer, key, val unsafe.Pointer)
 //go:noescape
 func mapdelete(t *rtype, m unsafe.Pointer, key unsafe.Pointer)
 
-// m escapes into the return value, but the caller of mapiterinit
-// doesn't let the return value escape.
 //go:noescape
-func mapiterinit(t *rtype, m unsafe.Pointer) unsafe.Pointer
+func mapiterinit(t *rtype, m unsafe.Pointer, it unsafe.Pointer)
 
 //go:noescape
 func mapiterkey(it unsafe.Pointer) (key unsafe.Pointer)
