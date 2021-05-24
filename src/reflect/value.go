@@ -1357,6 +1357,17 @@ func (it *MapIter) Next() bool {
 	return mapiterkey(it.it) != nil
 }
 
+// Reset modifies it to iterate over v.
+// It panics if v's Kind is not Map and v is not the zero Value.
+func (it *MapIter) Reset(v Value) {
+	if v.IsValid() {
+		v.mustBe(Map)
+	}
+	it.m = v
+	it.it = nil
+	it.hiter = hiter{}
+}
+
 // MapRange returns a range iterator for a map.
 // It panics if v's Kind is not Map.
 //
