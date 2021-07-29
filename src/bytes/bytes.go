@@ -8,6 +8,7 @@ package bytes
 
 import (
 	"internal/bytealg"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
@@ -887,25 +888,33 @@ func (as *asciiSet) contains(c byte) bool {
 	return (as[c>>5] & (1 << uint(c&31))) != 0
 }
 
+var cutsetFuncCache sync.Map // of string -> func(rune) bool
+
 func makeCutsetFunc(cutset string) func(r rune) bool {
+	if fn, ok := cutsetFuncCache.Load(cutset); ok {
+		return fn.(func(rune) bool)
+	}
+	var fn func(rune) bool
 	if len(cutset) == 1 && cutset[0] < utf8.RuneSelf {
-		return func(r rune) bool {
+		fn = func(r rune) bool {
 			return r == rune(cutset[0])
 		}
-	}
-	if as, isASCII := makeASCIISet(cutset); isASCII {
-		return func(r rune) bool {
+	} else if as, isASCII := makeASCIISet(cutset); isASCII {
+		fn = func(r rune) bool {
 			return r < utf8.RuneSelf && as.contains(byte(r))
 		}
-	}
-	return func(r rune) bool {
-		for _, c := range cutset {
-			if c == r {
-				return true
+	} else {
+		fn = func(r rune) bool {
+			for _, c := range cutset {
+				if c == r {
+					return true
+				}
 			}
+			return false
 		}
-		return false
 	}
+	cutsetFuncCache.LoadOrStore(cutset, fn)
+	return fn
 }
 
 // Trim returns a subslice of s by slicing off all leading and
