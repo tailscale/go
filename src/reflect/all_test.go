@@ -1008,6 +1008,82 @@ func TestDeepEqualUnexportedMap(t *testing.T) {
 	}
 }
 
+var deepEqualPerfTests = []struct {
+	x, y interface{}
+}{
+	{x: int8(99), y: int8(99)},
+	{x: []int8{99}, y: []int8{99}},
+	{x: int16(99), y: int16(99)},
+	{x: []int16{99}, y: []int16{99}},
+	{x: int32(99), y: int32(99)},
+	{x: []int32{99}, y: []int32{99}},
+	{x: int64(99), y: int64(99)},
+	{x: []int64{99}, y: []int64{99}},
+	{x: int(999999), y: int(999999)},
+	{x: []int{999999}, y: []int{999999}},
+
+	{x: uint8(99), y: uint8(99)},
+	{x: []uint8{99}, y: []uint8{99}},
+	{x: uint16(99), y: uint16(99)},
+	{x: []uint16{99}, y: []uint16{99}},
+	{x: uint32(99), y: uint32(99)},
+	{x: []uint32{99}, y: []uint32{99}},
+	{x: uint64(99), y: uint64(99)},
+	{x: []uint64{99}, y: []uint64{99}},
+	{x: uint(999999), y: uint(999999)},
+	{x: []uint{999999}, y: []uint{999999}},
+	{x: uintptr(999999), y: uintptr(999999)},
+	{x: []uintptr{999999}, y: []uintptr{999999}},
+
+	{x: float32(1.414), y: float32(1.414)},
+	{x: []float32{1.414}, y: []float32{1.414}},
+	{x: float64(1.414), y: float64(1.414)},
+	{x: []float64{1.414}, y: []float64{1.414}},
+
+	{x: complex64(1.414), y: complex64(1.414)},
+	{x: []complex64{1.414}, y: []complex64{1.414}},
+	{x: complex128(1.414), y: complex128(1.414)},
+	{x: []complex128{1.414}, y: []complex128{1.414}},
+
+	{x: true, y: true},
+	{x: []bool{true}, y: []bool{true}},
+
+	{x: "abcdef", y: "abcdef"},
+	{x: []string{"abcdef"}, y: []string{"abcdef"}},
+
+	{x: []byte("abcdef"), y: []byte("abcdef")},
+	{x: [][]byte{[]byte("abcdef")}, y: [][]byte{[]byte("abcdef")}},
+
+	{x: [6]byte{'a', 'b', 'c', 'a', 'b', 'c'}, y: [6]byte{'a', 'b', 'c', 'a', 'b', 'c'}},
+	{x: [][6]byte{[6]byte{'a', 'b', 'c', 'a', 'b', 'c'}}, y: [][6]byte{[6]byte{'a', 'b', 'c', 'a', 'b', 'c'}}},
+}
+
+func TestDeepEqualAllocs(t *testing.T) {
+	for _, tt := range deepEqualPerfTests {
+		t.Run(ValueOf(tt.x).Type().String(), func(t *testing.T) {
+			got := testing.AllocsPerRun(100, func() {
+				if !DeepEqual(tt.x, tt.y) {
+					t.Errorf("DeepEqual(%v, %v)=false", tt.x, tt.y)
+				}
+			})
+			if int(got) != 0 {
+				t.Errorf("DeepEqual(%v, %v) allocated %d times", tt.x, tt.y, int(got))
+			}
+		})
+	}
+}
+
+func BenchmarkDeepEqual(b *testing.B) {
+	for _, bb := range deepEqualPerfTests {
+		b.Run(ValueOf(bb.x).Type().String(), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				sink = DeepEqual(bb.x, bb.y)
+			}
+		})
+	}
+}
+
 func check2ndField(x interface{}, offs uintptr, t *testing.T) {
 	s := ValueOf(x)
 	f := s.Type().Field(1)
