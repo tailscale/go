@@ -461,18 +461,6 @@ func P256() Curve {
 	return p256
 }
 
-// P384 returns a Curve which implements NIST P-384 (FIPS 186-3, section D.2.4),
-// also known as secp384r1. The CurveParams.Name of this Curve is "P-384".
-//
-// Multiple invocations of this function will return the same value, so it can
-// be used for equality checks and switch statements.
-//
-// The cryptographic operations do not use constant-time algorithms.
-func P384() Curve {
-	initonce.Do(initAll)
-	return p384
-}
-
 // P521 returns a Curve which implements NIST P-521 (FIPS 186-3, section D.2.5),
 // also known as secp521r1. The CurveParams.Name of this Curve is "P-521".
 //
