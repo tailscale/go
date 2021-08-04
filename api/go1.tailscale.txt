@@ -1,3 +1,5 @@
+pkg bufio, method (*Writer) AvailableBuffer() []uint8
+pkg bufio, method (ReadWriter) AvailableBuffer() []uint8
 pkg crypto/elliptic, func BigInt2BytesLe([]uint8, *big.Int)
 pkg crypto/elliptic, func BigInt2Uint64Le([]uint64, *big.Int)
 pkg crypto/elliptic, func BytesLe2BigInt([]uint8) *big.Int
