@@ -145,7 +145,10 @@ type IsAtInfinityIer interface {
 
 func TestScalarMult(t *testing.T) {
 	const testTimes = 1 << 6
-	CirclCurve := elliptic.P384().(IsAtInfinityIer)
+	CirclCurve, ok := elliptic.P384().(IsAtInfinityIer)
+	if !ok {
+		t.Skip("using generic implementation")
+	}
 	StdCurve := elliptic.P384()
 	params := StdCurve.Params()
 
@@ -192,7 +195,10 @@ func TestScalarMult(t *testing.T) {
 
 func TestCombinedMult(t *testing.T) {
 	const testTimes = 1 << 7
-	CirclCurve := elliptic.P384().(IsAtInfinityIer)
+	CirclCurve, ok := elliptic.P384().(IsAtInfinityIer)
+	if !ok {
+		t.Skip("using generic implementation")
+	}
 	StdCurve := elliptic.P384()
 	params := StdCurve.Params()
 
@@ -217,7 +223,10 @@ func TestCombinedMult(t *testing.T) {
 }
 
 func BenchmarkScalarMult(b *testing.B) {
-	curve := elliptic.P384().(IsAtInfinityIer)
+	curve, ok := elliptic.P384().(IsAtInfinityIer)
+	if !ok {
+		b.Skip("using generic implementation")
+	}
 	params := curve.Params()
 
 	K, _ := rand.Int(rand.Reader, params.N)
