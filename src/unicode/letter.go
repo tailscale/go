@@ -18,10 +18,94 @@ const (
 // to save space: a slice of 16-bit ranges and a slice of 32-bit ranges.
 // The two slices must be in sorted order and non-overlapping.
 // Also, R32 should contain only values >= 0x10000 (1<<16).
-type RangeTable struct {
-	R16         []Range16
-	R32         []Range32
-	LatinOffset int // number of entries in R16 with Hi <= MaxLatin1
+//
+// Logically it's:
+//
+//     struct {
+//	   R16         []Range16
+//	   R32         []Range32
+//	   LatinOffset int // number of entries in R16 with Hi <= MaxLatin1
+//         Name string
+//     }
+//
+// From genliterange.go, the encoding is:
+//
+//     u32(uint32(len(name)))
+//     u32(uint32(rt.LatinOffset))
+//     u32(uint32(len(rt.R16)))
+//     u32(uint32(len(rt.R32)))
+//     for _, v := range rt.R16 {
+//     	   u16(v.Lo)
+//     	   u16(v.Hi)
+//         u16(v.Stride)
+//     }
+//     for _, v := range rt.R32 {
+//         u32(v.Lo)
+//         u32(v.Hi)
+//         u32(v.Stride)
+//     }
+//     enc.WriteString(name)
+//
+type RangeTable string
+
+func leu16(s RangeTable) uint16 {
+	_ = s[1] // bounds check hint to compiler; see golang.org/issue/14808
+	return uint16(s[0]) | uint16(s[1])<<8
+}
+
+func leu32(s RangeTable) uint32 {
+	_ = s[3] // bounds check hint to compiler; see golang.org/issue/14808
+	return uint32(s[0]) | uint32(s[1])<<8 | uint32(s[2])<<16 | uint32(s[3])<<24
+}
+
+func (rt RangeTable) LatinOffset() int {
+	return int(leu32(rt[4:8]))
+}
+
+const r16off = 4 * 4  // offset to Range16s in RangeTable
+const r16size = 3 * 2 // 3 * 2 packed bytes per Range16
+const r32size = 3 * 4 // 3 * 4 packed bytes per Range32
+
+func (rt RangeTable) numR16() int { return int(leu32(rt[8:12])) }
+func (rt RangeTable) numR32() int { return int(leu32(rt[12:16])) }
+
+func (rt RangeTable) R16() Range16s {
+	return Range16s(rt[r16off : r16off+r16size*rt.numR16()])
+}
+
+func (rt RangeTable) R32() Range32s {
+	off := r16off + rt.numR16()*r16size
+	size := r32size * rt.numR32()
+	return Range32s(rt[off : off+size])
+}
+
+type Range16s string
+
+func (s Range16s) Len() int                 { return len(s) / r16size }
+func (s Range16s) IsEmpty() bool            { return len(s) == 0 }
+func (s Range16s) SliceFrom(i int) Range16s { return s[i*r16size:] }
+func (s Range16s) Last() Range16            { return s.At(s.Len() - 1) }
+func (s Range16s) At(i int) Range16 {
+	rt := RangeTable(s[i*r16size:])
+	return Range16{
+		Lo:     leu16(rt[0:]),
+		Hi:     leu16(rt[2:]),
+		Stride: leu16(rt[4:]),
+	}
+}
+
+type Range32s string
+
+func (s Range32s) Len() int      { return len(s) / r32size }
+func (s Range32s) IsEmpty() bool { return len(s) == 0 }
+func (s Range32s) Last() Range32 { return s.At(s.Len() - 1) }
+func (s Range32s) At(i int) Range32 {
+	rt := RangeTable(s[i*r32size:])
+	return Range32{
+		Lo:     leu32(rt[0:]),
+		Hi:     leu32(rt[4:]),
+		Stride: leu32(rt[8:]),
+	}
 }
 
 // Range16 represents of a range of 16-bit Unicode code points. The range runs from Lo to Hi
@@ -86,10 +170,10 @@ const (
 const linearMax = 18
 
 // is16 reports whether r is in the sorted slice of 16-bit ranges.
-func is16(ranges []Range16, r uint16) bool {
-	if len(ranges) <= linearMax || r <= MaxLatin1 {
-		for i := range ranges {
-			range_ := &ranges[i]
+func is16(ranges Range16s, r uint16) bool {
+	if ranges.Len() <= linearMax || r <= MaxLatin1 {
+		for i, n := 0, ranges.Len(); i < n; i++ {
+			range_ := ranges.At(i)
 			if r < range_.Lo {
 				return false
 			}
@@ -102,10 +186,10 @@ func is16(ranges []Range16, r uint16) bool {
 
 	// binary search over ranges
 	lo := 0
-	hi := len(ranges)
+	hi := ranges.Len()
 	for lo < hi {
 		m := lo + (hi-lo)/2
-		range_ := &ranges[m]
+		range_ := ranges.At(m)
 		if range_.Lo <= r && r <= range_.Hi {
 			return range_.Stride == 1 || (r-range_.Lo)%range_.Stride == 0
 		}
@@ -119,10 +203,10 @@ func is16(ranges []Range16, r uint16) bool {
 }
 
 // is32 reports whether r is in the sorted slice of 32-bit ranges.
-func is32(ranges []Range32, r uint32) bool {
-	if len(ranges) <= linearMax {
-		for i := range ranges {
-			range_ := &ranges[i]
+func is32(ranges Range32s, r uint32) bool {
+	if ranges.Len() <= linearMax {
+		for i, n := 0, ranges.Len(); i < n; i++ {
+			range_ := ranges.At(i)
 			if r < range_.Lo {
 				return false
 			}
@@ -135,10 +219,10 @@ func is32(ranges []Range32, r uint32) bool {
 
 	// binary search over ranges
 	lo := 0
-	hi := len(ranges)
+	hi := ranges.Len()
 	for lo < hi {
 		m := lo + (hi-lo)/2
-		range_ := ranges[m]
+		range_ := ranges.At(m)
 		if range_.Lo <= r && r <= range_.Hi {
 			return range_.Stride == 1 || (r-range_.Lo)%range_.Stride == 0
 		}
@@ -152,25 +236,25 @@ func is32(ranges []Range32, r uint32) bool {
 }
 
 // Is reports whether the rune is in the specified table of ranges.
-func Is(rangeTab *RangeTable, r rune) bool {
-	r16 := rangeTab.R16
-	if len(r16) > 0 && r <= rune(r16[len(r16)-1].Hi) {
+func Is(rangeTab RangeTable, r rune) bool {
+	r16 := rangeTab.R16()
+	if !r16.IsEmpty() && r <= rune(r16.Last().Hi) {
 		return is16(r16, uint16(r))
 	}
-	r32 := rangeTab.R32
-	if len(r32) > 0 && r >= rune(r32[0].Lo) {
+	r32 := rangeTab.R32()
+	if !r32.IsEmpty() && r >= rune(r32.At(0).Lo) {
 		return is32(r32, uint32(r))
 	}
 	return false
 }
 
-func isExcludingLatin(rangeTab *RangeTable, r rune) bool {
-	r16 := rangeTab.R16
-	if off := rangeTab.LatinOffset; len(r16) > off && r <= rune(r16[len(r16)-1].Hi) {
-		return is16(r16[off:], uint16(r))
+func isExcludingLatin(rangeTab RangeTable, r rune) bool {
+	r16 := rangeTab.R16()
+	if off := rangeTab.LatinOffset(); r16.Len() > off && r <= rune(r16.Last().Hi) {
+		return is16(r16.SliceFrom(off), uint16(r))
 	}
-	r32 := rangeTab.R32
-	if len(r32) > 0 && r >= rune(r32[0].Lo) {
+	r32 := rangeTab.R32()
+	if !r32.IsEmpty() && r >= rune(r32.At(0).Lo) {
 		return is32(r32, uint32(r))
 	}
 	return false

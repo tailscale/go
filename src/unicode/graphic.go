@@ -20,13 +20,13 @@ const (
 )
 
 // GraphicRanges defines the set of graphic characters according to Unicode.
-var GraphicRanges = []*RangeTable{
+var GraphicRanges = []RangeTable{
 	L, M, N, P, S, Zs,
 }
 
 // PrintRanges defines the set of printable characters according to Go.
 // ASCII space, U+0020, is handled separately.
-var PrintRanges = []*RangeTable{
+var PrintRanges = []RangeTable{
 	L, M, N, P, S,
 }
 
@@ -56,7 +56,7 @@ func IsPrint(r rune) bool {
 
 // IsOneOf reports whether the rune is a member of one of the ranges.
 // The function "In" provides a nicer signature and should be used in preference to IsOneOf.
-func IsOneOf(ranges []*RangeTable, r rune) bool {
+func IsOneOf(ranges []RangeTable, r rune) bool {
 	for _, inside := range ranges {
 		if Is(inside, r) {
 			return true
@@ -66,7 +66,7 @@ func IsOneOf(ranges []*RangeTable, r rune) bool {
 }
 
 // In reports whether the rune is a member of one of the ranges.
-func In(r rune, ranges ...*RangeTable) bool {
+func In(r rune, ranges ...RangeTable) bool {
 	for _, inside := range ranges {
 		if Is(inside, r) {
 			return true

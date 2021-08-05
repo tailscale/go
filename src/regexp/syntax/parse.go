@@ -1426,25 +1426,20 @@ func (p *parser) appendGroup(r []rune, g charGroup) []rune {
 	return r
 }
 
-var anyTable = &unicode.RangeTable{
-	R16: []unicode.Range16{{Lo: 0, Hi: 1<<16 - 1, Stride: 1}},
-	R32: []unicode.Range32{{Lo: 1 << 16, Hi: unicode.MaxRune, Stride: 1}},
-}
-
 // unicodeTable returns the unicode.RangeTable identified by name
 // and the table of additional fold-equivalent code points.
-func unicodeTable(name string) (*unicode.RangeTable, *unicode.RangeTable) {
+func unicodeTable(name string) (unicode.RangeTable, unicode.RangeTable) {
 	// Special case: "Any" means any.
 	if name == "Any" {
-		return anyTable, anyTable
+		return unicode.RegexpAny, unicode.RegexpAny
 	}
-	if t := unicode.Categories[name]; t != nil {
-		return t, unicode.FoldCategory[name]
+	if t := unicode.Categories()[name]; t != "" {
+		return t, unicode.FoldCategory()[name]
 	}
-	if t := unicode.Scripts[name]; t != nil {
-		return t, unicode.FoldScript[name]
+	if t := unicode.Scripts()[name]; t != "" {
+		return t, unicode.FoldScript()[name]
 	}
-	return nil, nil
+	return "", ""
 }
 
 // parseUnicodeClass parses a leading Unicode character class like \p{Han}
@@ -1493,11 +1488,11 @@ func (p *parser) parseUnicodeClass(s string, r []rune) (out []rune, rest string,
 	}
 
 	tab, fold := unicodeTable(name)
-	if tab == nil {
+	if tab == "" {
 		return nil, "", &Error{ErrInvalidCharRange, seq}
 	}
 
-	if p.flags&FoldCase == 0 || fold == nil {
+	if p.flags&FoldCase == 0 || fold == "" {
 		if sign > 0 {
 			r = appendTable(r, tab)
 		} else {
@@ -1759,8 +1754,10 @@ func appendNegatedClass(r []rune, x []rune) []rune {
 }
 
 // appendTable returns the result of appending x to the class r.
-func appendTable(r []rune, x *unicode.RangeTable) []rune {
-	for _, xr := range x.R16 {
+func appendTable(r []rune, x unicode.RangeTable) []rune {
+	r16, r32 := x.R16(), x.R32()
+	for i, n := 0, r16.Len(); i < n; i++ {
+		xr := r16.At(i)
 		lo, hi, stride := rune(xr.Lo), rune(xr.Hi), rune(xr.Stride)
 		if stride == 1 {
 			r = appendRange(r, lo, hi)
@@ -1770,7 +1767,8 @@ func appendTable(r []rune, x *unicode.RangeTable) []rune {
 			r = appendRange(r, c, c)
 		}
 	}
-	for _, xr := range x.R32 {
+	for i, n := 0, r32.Len(); i < n; i++ {
+		xr := r32.At(i)
 		lo, hi, stride := rune(xr.Lo), rune(xr.Hi), rune(xr.Stride)
 		if stride == 1 {
 			r = appendRange(r, lo, hi)
@@ -1784,9 +1782,11 @@ func appendTable(r []rune, x *unicode.RangeTable) []rune {
 }
 
 // appendNegatedTable returns the result of appending the negation of x to the class r.
-func appendNegatedTable(r []rune, x *unicode.RangeTable) []rune {
+func appendNegatedTable(r []rune, x unicode.RangeTable) []rune {
+	r16, r32 := x.R16(), x.R32()
 	nextLo := '\u0000' // lo end of next class to add
-	for _, xr := range x.R16 {
+	for i, n := 0, r16.Len(); i < n; i++ {
+		xr := r16.At(i)
 		lo, hi, stride := rune(xr.Lo), rune(xr.Hi), rune(xr.Stride)
 		if stride == 1 {
 			if nextLo <= lo-1 {
@@ -1802,7 +1802,8 @@ func appendNegatedTable(r []rune, x *unicode.RangeTable) []rune {
 			nextLo = c + 1
 		}
 	}
-	for _, xr := range x.R32 {
+	for i, n := 0, r32.Len(); i < n; i++ {
+		xr := r32.At(i)
 		lo, hi, stride := rune(xr.Lo), rune(xr.Hi), rune(xr.Stride)
 		if stride == 1 {
 			if nextLo <= lo-1 {
