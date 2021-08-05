@@ -73,7 +73,7 @@ var depsRules = `
 	< container/list, container/ring,
 	  internal/cfg, internal/cpu, internal/goexperiment,
 	  internal/goversion, internal/nettrace,
-	  unicode/utf8, unicode/utf16, unicode,
+	  unicode/utf8, unicode/utf16,
 	  unsafe;
 
 	# These packages depend only on unsafe.
@@ -102,7 +102,7 @@ var depsRules = `
 	< container/heap;
 
 	RUNTIME
-	< io;
+	< io, unicode;
 
 	syscall !< io;
 	reflect !< sort;

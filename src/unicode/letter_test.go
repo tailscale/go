@@ -533,7 +533,7 @@ func binary(ranges []Range16, r uint16) bool {
 }
 
 func TestLatinOffset(t *testing.T) {
-	var maps = []map[string]*RangeTable{
+	var maps = []func() map[string]*RangeTable{
 		Categories,
 		FoldCategory,
 		FoldScript,
@@ -541,7 +541,7 @@ func TestLatinOffset(t *testing.T) {
 		Scripts,
 	}
 	for _, m := range maps {
-		for name, tab := range m {
+		for name, tab := range m() {
 			i := 0
 			for i < len(tab.R16) && tab.R16[i].Hi <= MaxLatin1 {
 				i++

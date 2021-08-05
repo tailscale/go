@@ -504,3 +504,8 @@ pkg unicode, const Version = "6.3.0"
 pkg unicode, const Version = "7.0.0"
 pkg unicode, const Version = "8.0.0"
 pkg unicode, const Version = "9.0.0"
+pkg unicode, var Categories map[string]*RangeTable
+pkg unicode, var FoldCategory map[string]*RangeTable
+pkg unicode, var FoldScript map[string]*RangeTable
+pkg unicode, var Properties map[string]*RangeTable
+pkg unicode, var Scripts map[string]*RangeTable

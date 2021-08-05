@@ -1438,11 +1438,11 @@ func unicodeTable(name string) (*unicode.RangeTable, *unicode.RangeTable) {
 	if name == "Any" {
 		return anyTable, anyTable
 	}
-	if t := unicode.Categories[name]; t != nil {
-		return t, unicode.FoldCategory[name]
+	if t := unicode.Categories()[name]; t != nil {
+		return t, unicode.FoldCategory()[name]
 	}
-	if t := unicode.Scripts[name]; t != nil {
-		return t, unicode.FoldScript[name]
+	if t := unicode.Scripts()[name]; t != nil {
+		return t, unicode.FoldScript()[name]
 	}
 	return nil, nil
 }

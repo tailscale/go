@@ -119,3 +119,8 @@ pkg syscall (windows-386), func WSASendtoInet4(Handle, *WSABuf, uint32, *uint32,
 pkg syscall (windows-386), func WSASendtoInet6(Handle, *WSABuf, uint32, *uint32, uint32, SockaddrInet6, *Overlapped, *uint8) error
 pkg syscall (windows-amd64), func WSASendtoInet4(Handle, *WSABuf, uint32, *uint32, uint32, SockaddrInet4, *Overlapped, *uint8) error
 pkg syscall (windows-amd64), func WSASendtoInet6(Handle, *WSABuf, uint32, *uint32, uint32, SockaddrInet6, *Overlapped, *uint8) error
+pkg unicode, func Categories() map[string]*RangeTable
+pkg unicode, func FoldCategory() map[string]*RangeTable
+pkg unicode, func FoldScript() map[string]*RangeTable
+pkg unicode, func Properties() map[string]*RangeTable
+pkg unicode, func Scripts() map[string]*RangeTable

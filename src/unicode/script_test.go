@@ -94,14 +94,14 @@ var inPropTest = []T{
 
 func TestCategories(t *testing.T) {
 	notTested := make(map[string]bool)
-	for k := range Categories {
+	for k := range Categories() {
 		notTested[k] = true
 	}
 	for _, test := range inCategoryTest {
-		if _, ok := Categories[test.script]; !ok {
+		if _, ok := Categories()[test.script]; !ok {
 			t.Fatal(test.script, "not a known category")
 		}
-		if !Is(Categories[test.script], test.rune) {
+		if !Is(Categories()[test.script], test.rune) {
 			t.Errorf("IsCategory(%U, %s) = false, want true", test.rune, test.script)
 		}
 		delete(notTested, test.script)
@@ -113,14 +113,14 @@ func TestCategories(t *testing.T) {
 
 func TestProperties(t *testing.T) {
 	notTested := make(map[string]bool)
-	for k := range Properties {
+	for k := range Properties() {
 		notTested[k] = true
 	}
 	for _, test := range inPropTest {
-		if _, ok := Properties[test.script]; !ok {
+		if _, ok := Properties()[test.script]; !ok {
 			t.Fatal(test.script, "not a known prop")
 		}
-		if !Is(Properties[test.script], test.rune) {
+		if !Is(Properties()[test.script], test.rune) {
 			t.Errorf("IsCategory(%U, %s) = false, want true", test.rune, test.script)
 		}
 		delete(notTested, test.script)
