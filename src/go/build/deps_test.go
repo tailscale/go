@@ -74,7 +74,7 @@ var depsRules = `
 	  internal/cfg, internal/cpu, internal/goarch,
 	  internal/goexperiment, internal/goos,
 	  internal/goversion, internal/nettrace,
-	  unicode/utf8, unicode/utf16, unicode,
+	  unicode/utf8, unicode/utf16,
 	  unsafe;
 
 	# These packages depend only on internal/goarch and unsafe.
@@ -104,7 +104,7 @@ var depsRules = `
 	< container/heap;
 
 	RUNTIME
-	< io;
+	< io, unicode;
 
 	syscall !< io;
 	reflect !< sort;

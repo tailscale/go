@@ -1,1 +1,6 @@
 pkg net/http, type Transport struct, OnProxyConnectResponse func(context.Context, *url.URL, *Request, *Response) error
+pkg unicode, func Categories() map[string]*RangeTable
+pkg unicode, func FoldCategory() map[string]*RangeTable
+pkg unicode, func FoldScript() map[string]*RangeTable
+pkg unicode, func Properties() map[string]*RangeTable
+pkg unicode, func Scripts() map[string]*RangeTable
