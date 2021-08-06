@@ -47,6 +47,54 @@ var Categories = map[string]*RangeTable{
 	"Zs": unicodelite.Zs,
 }
 
+var Other = unicodelite.Other
+var C = unicodelite.C
+var Cc = unicodelite.Cc
+var Cf = unicodelite.Cf
+var Co = unicodelite.Co
+var Cs = unicodelite.Cs
+var Letter = unicodelite.Letter
+var L = unicodelite.L
+var Lower = unicodelite.Lower
+var Ll = unicodelite.Ll
+var Lm = unicodelite.Lm
+var Lo = unicodelite.Lo
+var Title = unicodelite.Title
+var Lt = unicodelite.Lt
+var Upper = unicodelite.Upper
+var Lu = unicodelite.Lu
+var Mark = unicodelite.Mark
+var M = unicodelite.M
+var Mc = unicodelite.Mc
+var Me = unicodelite.Me
+var Mn = unicodelite.Mn
+var Number = unicodelite.Number
+var N = unicodelite.N
+var Digit = unicodelite.Digit
+var Nd = unicodelite.Nd
+var Nl = unicodelite.Nl
+var No = unicodelite.No
+var Punct = unicodelite.Punct
+var P = unicodelite.P
+var Pc = unicodelite.Pc
+var Pd = unicodelite.Pd
+var Pe = unicodelite.Pe
+var Pf = unicodelite.Pf
+var Pi = unicodelite.Pi
+var Po = unicodelite.Po
+var Ps = unicodelite.Ps
+var Symbol = unicodelite.Symbol
+var S = unicodelite.S
+var Sc = unicodelite.Sc
+var Sk = unicodelite.Sk
+var Sm = unicodelite.Sm
+var So = unicodelite.So
+var Space = unicodelite.Space
+var Z = unicodelite.Z
+var Zl = unicodelite.Zl
+var Zp = unicodelite.Zp
+var Zs = unicodelite.Zs
+
 // Scripts is the set of Unicode script tables.
 var Scripts = map[string]*RangeTable{
 	"Adlam":                  unicodelite.Adlam,

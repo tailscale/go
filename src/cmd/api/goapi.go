@@ -334,6 +334,10 @@ var aliasReplacer = strings.NewReplacer(
 	"os.FileInfo", "fs.FileInfo",
 	"os.FileMode", "fs.FileMode",
 	"os.PathError", "fs.PathError",
+	"unicode.SpecialCase", "unicodelite.SpecialCase",
+	"SpecialCase", "unicodelite.SpecialCase",
+	"unicode.RangeTable", "unicodelite.RangeTable",
+	"RangeTable", "unicodelite.RangeTable",
 )
 
 func fileFeatures(filename string) []string {
