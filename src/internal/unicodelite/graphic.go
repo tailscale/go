@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package unicode
-
-import "internal/unicodelite"
+package unicodelite
 
 // Bit masks for each code point under U+0100, for fast lookup.
 const (
@@ -22,17 +20,26 @@ const (
 )
 
 // GraphicRanges defines the set of graphic characters according to Unicode.
-var GraphicRanges = unicodelite.GraphicRanges
+var GraphicRanges = []*RangeTable{
+	L, M, N, P, S, Zs,
+}
 
 // PrintRanges defines the set of printable characters according to Go.
 // ASCII space, U+0020, is handled separately.
-var PrintRanges = unicodelite.PrintRanges
+var PrintRanges = []*RangeTable{
+	L, M, N, P, S,
+}
 
 // IsGraphic reports whether the rune is defined as a Graphic by Unicode.
 // Such characters include letters, marks, numbers, punctuation, symbols, and
 // spaces, from categories L, M, N, P, S, Zs.
 func IsGraphic(r rune) bool {
-	return unicodelite.IsGraphic(r)
+	// We convert to uint32 to avoid the extra test for negative,
+	// and in the index we convert to uint8 to avoid the range check.
+	if uint32(r) <= MaxLatin1 {
+		return properties[uint8(r)]&pg != 0
+	}
+	return In(r, GraphicRanges...)
 }
 
 // IsPrint reports whether the rune is defined as printable by Go. Such
@@ -41,46 +48,73 @@ func IsGraphic(r rune) bool {
 // character. This categorization is the same as IsGraphic except that the
 // only spacing character is ASCII space, U+0020.
 func IsPrint(r rune) bool {
-	return unicodelite.IsPrint(r)
+	if uint32(r) <= MaxLatin1 {
+		return properties[uint8(r)]&pp != 0
+	}
+	return In(r, PrintRanges...)
 }
 
 // IsOneOf reports whether the rune is a member of one of the ranges.
 // The function "In" provides a nicer signature and should be used in preference to IsOneOf.
 func IsOneOf(ranges []*RangeTable, r rune) bool {
-	return unicodelite.IsOneOf(ranges, r)
+	for _, inside := range ranges {
+		if Is(inside, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // In reports whether the rune is a member of one of the ranges.
 func In(r rune, ranges ...*RangeTable) bool {
-	return unicodelite.In(r, ranges...)
+	for _, inside := range ranges {
+		if Is(inside, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsControl reports whether the rune is a control character.
 // The C (Other) Unicode category includes more code points
 // such as surrogates; use Is(C, r) to test for them.
 func IsControl(r rune) bool {
-	return unicodelite.IsControl(r)
+	if uint32(r) <= MaxLatin1 {
+		return properties[uint8(r)]&pC != 0
+	}
+	// All control characters are < MaxLatin1.
+	return false
 }
 
 // IsLetter reports whether the rune is a letter (category L).
 func IsLetter(r rune) bool {
-	return unicodelite.IsLetter(r)
+	if uint32(r) <= MaxLatin1 {
+		return properties[uint8(r)]&(pLmask) != 0
+	}
+	return isExcludingLatin(Letter, r)
 }
 
 // IsMark reports whether the rune is a mark character (category M).
 func IsMark(r rune) bool {
-	return unicodelite.IsMark(r)
+	// There are no mark characters in Latin-1.
+	return isExcludingLatin(Mark, r)
 }
 
 // IsNumber reports whether the rune is a number (category N).
 func IsNumber(r rune) bool {
-	return unicodelite.IsNumber(r)
+	if uint32(r) <= MaxLatin1 {
+		return properties[uint8(r)]&pN != 0
+	}
+	return isExcludingLatin(Number, r)
 }
 
 // IsPunct reports whether the rune is a Unicode punctuation character
 // (category P).
 func IsPunct(r rune) bool {
-	return unicodelite.IsPunct(r)
+	if uint32(r) <= MaxLatin1 {
+		return properties[uint8(r)]&pP != 0
+	}
+	return Is(Punct, r)
 }
 
 // IsSpace reports whether the rune is a space character as defined
@@ -90,10 +124,21 @@ func IsPunct(r rune) bool {
 // Other definitions of spacing characters are set by category
 // Z and property Pattern_White_Space.
 func IsSpace(r rune) bool {
-	return unicodelite.IsSpace(r)
+	// This property isn't the same as Z; special-case it.
+	if uint32(r) <= MaxLatin1 {
+		switch r {
+		case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xA0:
+			return true
+		}
+		return false
+	}
+	return isExcludingLatin(White_Space, r)
 }
 
 // IsSymbol reports whether the rune is a symbolic character.
 func IsSymbol(r rune) bool {
-	return unicodelite.IsSymbol(r)
+	if uint32(r) <= MaxLatin1 {
+		return properties[uint8(r)]&pS != 0
+	}
+	return isExcludingLatin(Symbol, r)
 }

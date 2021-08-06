@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package unicode_test
+package unicodelite_test
 
 import (
+	. "internal/unicodelite"
 	"testing"
-	. "unicode"
 )
 
 // Independently check that the special "Is" functions work

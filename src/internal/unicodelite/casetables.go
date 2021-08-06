@@ -7,12 +7,14 @@
 // and be generated automatically, but that requires some API
 // development first.
 
-package unicode
+package unicodelite
 
-import (
-	"internal/unicodelite"
-)
+var TurkishCase SpecialCase = _TurkishCase
+var _TurkishCase = SpecialCase{
+	CaseRange{0x0049, 0x0049, D{0, 0x131 - 0x49, 0}},
+	CaseRange{0x0069, 0x0069, D{0x130 - 0x69, 0, 0x130 - 0x69}},
+	CaseRange{0x0130, 0x0130, D{0, 0x69 - 0x130, 0}},
+	CaseRange{0x0131, 0x0131, D{0x49 - 0x131, 0, 0x49 - 0x131}},
+}
 
-var TurkishCase = unicodelite.TurkishCase
-
-var AzeriCase = unicodelite.AzeriCase
+var AzeriCase SpecialCase = _TurkishCase

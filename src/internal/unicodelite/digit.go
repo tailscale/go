@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package unicode
-
-import "internal/unicodelite"
+package unicodelite
 
 // IsDigit reports whether the rune is a decimal digit.
 func IsDigit(r rune) bool {
-	return unicodelite.IsDigit(r)
+	if r <= MaxLatin1 {
+		return '0' <= r && r <= '9'
+	}
+	return isExcludingLatin(Digit, r)
 }
