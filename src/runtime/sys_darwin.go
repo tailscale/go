@@ -187,6 +187,13 @@ func madvise_trampoline()
 
 //go:nosplit
 //go:cgo_unsafe_args
+func mprotect(addr unsafe.Pointer, n uintptr, flags int32) {
+	libcCall(unsafe.Pointer(abi.FuncPCABI0(mprotect_trampoline)), unsafe.Pointer(&addr))
+}
+func mprotect_trampoline()
+
+//go:nosplit
+//go:cgo_unsafe_args
 func mlock(addr unsafe.Pointer, n uintptr) {
 	libcCall(unsafe.Pointer(abi.FuncPCABI0(mlock_trampoline)), unsafe.Pointer(&addr))
 }

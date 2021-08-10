@@ -24,6 +24,8 @@ func sysUnused(v unsafe.Pointer, n uintptr) {
 	// MADV_FREE_REUSABLE is like MADV_FREE except it also propagates
 	// accounting information about the process to task_info.
 	madvise(v, n, _MADV_FREE_REUSABLE)
+	mprotect(v, n, _PROT_NONE)
+	mprotect(v, n, _PROT_READ|_PROT_WRITE)
 }
 
 func sysUsed(v unsafe.Pointer, n uintptr) {
