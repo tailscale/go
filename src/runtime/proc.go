@@ -711,6 +711,9 @@ func schedinit() {
 	lock(&sched.lock)
 	sched.lastpoll = uint64(nanotime())
 	procs := ncpu
+	if sys.GoosIos != 0 {
+		procs = 1
+	}
 	if n, ok := atoi32(gogetenv("GOMAXPROCS")); ok && n > 0 {
 		procs = n
 	}
