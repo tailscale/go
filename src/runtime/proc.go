@@ -8,6 +8,7 @@ import (
 	"internal/abi"
 	"internal/cpu"
 	"internal/goarch"
+	"internal/goos"
 	"runtime/internal/atomic"
 	"runtime/internal/sys"
 	"unsafe"
@@ -719,6 +720,9 @@ func schedinit() {
 	lock(&sched.lock)
 	sched.lastpoll = uint64(nanotime())
 	procs := ncpu
+	if goos.IsIos != 0 {
+		procs = 1
+	}
 	if n, ok := atoi32(gogetenv("GOMAXPROCS")); ok && n > 0 {
 		procs = n
 	}
