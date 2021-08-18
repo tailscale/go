@@ -7,6 +7,9 @@
 // See malloc.go for overview.
 // See also mksizeclasses.go for how we decide what size classes to use.
 
+//go:generate go run mksizeclasses.go -tags "!ios && !actslikeios"
+//go:generate go run mksizeclasses.go -tags "(ios || actslikeios)" -pageshift 11 -maxsmall 16384 -nclasses 0 -out sizeclasses_small.go
+
 package runtime
 
 // Returns size of the memory block that mallocgc will allocate if you ask for the size.
