@@ -1314,6 +1314,9 @@ func (s *state) instrument2(t *types.Type, addr, addr2 *ssa.Value, kind instrume
 	if !s.curfn.InstrumentBody() {
 		return
 	}
+	if base.Flag.RaceNoReads && kind == instrumentRead {
+		return
+	}
 
 	w := t.Size()
 	if w == 0 {

@@ -113,6 +113,7 @@ type CmdFlags struct {
 	NoLocalImports     bool         "help:\"reject local (relative) imports\""
 	Pack               bool         "help:\"write to file.a instead of file.o\""
 	Race               bool         "help:\"enable race detector\""
+	RaceNoReads        bool         "help:\"disable race detector read instrumentation\""
 	Shared             *bool        "help:\"generate code that can be linked into a shared library\"" // &Ctxt.Flag_shared, set below
 	SmallFrames        bool         "help:\"reduce the size limit for stack allocated objects\""      // small stacks, to diagnose GC latency; see golang.org/issue/27732
 	Spectre            string       "help:\"enable spectre mitigations in `list` (all, index, ret)\""
