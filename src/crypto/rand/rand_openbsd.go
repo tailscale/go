@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build darwin || openbsd
-// +build darwin openbsd
-
 package rand
 
 import (
@@ -12,10 +9,10 @@ import (
 )
 
 func init() {
-	altGetRandom = getEntropy
+	altGetRandom = getRandomOpenBSD
 }
 
-func getEntropy(p []byte) (ok bool) {
+func getRandomOpenBSD(p []byte) (ok bool) {
 	// getentropy(2) returns a maximum of 256 bytes per call
 	for i := 0; i < len(p); i += 256 {
 		end := i + 256
