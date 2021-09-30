@@ -548,6 +548,9 @@ func (ctxt *Link) symtab(pcln *pclntab) []sym.SymKind {
 			symGroupType[s] = sym.SGOSTRING
 			ldr.SetAttrNotInSymbolTable(s, true)
 			ldr.SetCarrierSym(s, symgostring)
+			if ldr.SymAlign(s) == 0 {
+				ldr.SetSymAlign(s, 1) // String data is just bytes, no padding.
+			}
 
 		case strings.HasPrefix(name, "runtime.gcbits."):
 			symGroupType[s] = sym.SGCBITS
@@ -606,6 +609,9 @@ func (ctxt *Link) symtab(pcln *pclntab) []sym.SymKind {
 				if symtyperel != 0 {
 					ldr.SetCarrierSym(s, symtype)
 				}
+			}
+			if strings.HasPrefix(name, "type..namedata.") && ldr.SymAlign(s) == 0 {
+				ldr.SetSymAlign(s, 1) // String data is just bytes, no padding.
 			}
 		}
 	}
