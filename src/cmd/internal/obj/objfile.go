@@ -406,9 +406,6 @@ func contentHashSection(s *LSym) byte {
 	if s.IsPcdata() {
 		return 'P'
 	}
-	if strings.HasPrefix(name, "runtime.gcbits.") {
-		return 'G' // gcbits
-	}
 	if strings.HasPrefix(name, "gcargs.") ||
 		strings.HasPrefix(name, "gclocals.") ||
 		strings.HasPrefix(name, "gclocals·") ||
