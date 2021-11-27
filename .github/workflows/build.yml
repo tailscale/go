@@ -65,6 +65,32 @@ jobs:
         name: darwin
         path: ../darwin.tar.gz
 
+  linux-arm64:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+    - name: checkout
+      uses: actions/checkout@v2
+    - name: build
+      run: cd src && ./make.bash
+      env:
+        GOOS: linux
+        GOARCH: arm64
+    - name: trim unnecessary bits
+      run: |
+        rm -rf pkg/*_* pkg/tool/linux_amd64 bin/go bin/gofmt
+        mv bin/linux_arm64/* bin/
+        find . -type d -name 'testdata' -print0 | xargs -0 rm -rf
+        find . -name '*_test.go' -delete
+    - name: archive
+      run: cd .. && tar --exclude-vcs -zcf linux-arm64.tar.gz go
+    - name: save
+      uses: actions/upload-artifact@v1
+      with:
+        name: linux-arm64
+        path: ../linux-arm64.tar.gz
+
+
   darwin-arm64:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
@@ -94,7 +120,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
-    needs: [test, linux, darwin, darwin-arm64]
+    needs: [test, linux, darwin, darwin-arm64, linux-arm64]
     steps:
     - name: download linux
       uses: actions/download-artifact@v1
@@ -108,6 +134,10 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: darwin-arm64
+    - name: download linux-arm64
+      uses: actions/download-artifact@v1
+      with:
+        name: linux-arm64
     - name: create release
       id: create_release
       uses: actions/create-release@v1
@@ -127,6 +157,15 @@ jobs:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: linux/linux.tar.gz
         asset_name: linux.tar.gz
+        asset_content_type: application/gzip
+    - name: upload linux-arm64 tarball
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: linux-arm64/linux-arm64.tar.gz
+        asset_name: linux-arm64.tar.gz
         asset_content_type: application/gzip
     - name: upload darwin tarball
       uses: actions/upload-release-asset@v1
