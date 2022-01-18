@@ -1,8 +1,7 @@
 name: Build toolchain
 
 permissions:
-  packages: write
-  contents: read
+  contents: write
 
 on:
   push:
