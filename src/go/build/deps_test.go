@@ -393,6 +393,7 @@ var depsRules = `
 	< crypto/subtle
 	< crypto/internal/subtle
 	< crypto/elliptic/internal/fiat
+	< crypto/elliptic/internal/nistec
 	< crypto/ed25519/internal/edwards25519/field
 	< crypto/ed25519/internal/edwards25519
 	< crypto/cipher
@@ -403,7 +404,7 @@ var depsRules = `
 	CGO, fmt, net !< CRYPTO;
 
 	# CRYPTO-MATH is core bignum-based crypto - no cgo, net; fmt now ok.
-	CRYPTO, FMT, math/big
+	CRYPTO, FMT, math/big, embed
 	< crypto/rand
 	< crypto/internal/randutil
 	< crypto/ed25519
