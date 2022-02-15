@@ -1,14 +1,5 @@
 pkg bufio, method (*Writer) AvailableBuffer() []uint8
 pkg bufio, method (ReadWriter) AvailableBuffer() []uint8
-pkg crypto/elliptic, func BigInt2BytesLe([]uint8, *big.Int)
-pkg crypto/elliptic, func BigInt2Uint64Le([]uint64, *big.Int)
-pkg crypto/elliptic, func BytesLe2BigInt([]uint8) *big.Int
-pkg crypto/elliptic, func BytesLe2Hex([]uint8) string
-pkg crypto/elliptic, func OmegaNAF(*big.Int, uint) []int32
-pkg crypto/elliptic, func SignedDigit(*big.Int, uint, uint) []int32
-pkg crypto/elliptic, func Uint64Le2BigInt([]uint64) *big.Int
-pkg crypto/elliptic, func Uint64Le2BytesLe([]uint64) []uint8
-pkg crypto/elliptic, func Uint64Le2Hex([]uint64) string
 pkg net/http, type Transport struct, OnProxyConnectResponse func(context.Context, *url.URL, *Request, *Response) error
 pkg reflect, method (*MapIter) SetKey(Value)
 pkg reflect, method (*MapIter) SetValue(Value)
