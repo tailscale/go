@@ -364,6 +364,11 @@ func findgoversion() string {
 			}
 			if isGitRepo() {
 				b += "-ts" + chomp(run(goroot, CheckExit, "git", "log", "-n", "1", "--format=format:%h", "HEAD"))
+			} else if rev := os.Getenv("TAILSCALE_TOOLCHAIN_REV"); rev != "" {
+				if len(rev) > 10 {
+					rev = rev[:10]
+				}
+				b += "-ts" + chomp(rev)
 			}
 			return b
 		}
