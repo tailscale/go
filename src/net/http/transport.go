@@ -252,6 +252,11 @@ type Transport struct {
 	// ignored.
 	GetProxyConnectHeader func(ctx context.Context, proxyURL *url.URL, target string) (Header, error)
 
+	// OnProxyConnectResponse is called when the Transport gets an HTTP response from
+	// a proxy for a CONNECT request. It's called before the check for a 200 OK response.
+	// If it returns an error, the request fails with that error.
+	OnProxyConnectResponse func(ctx context.Context, proxyURL *url.URL, connectReq *Request, connectRes *Response) error
+
 	// MaxResponseHeaderBytes specifies a limit on how many
 	// response bytes are allowed in the server's response
 	// header.
@@ -324,6 +329,7 @@ func (t *Transport) Clone() *Transport {
 		ExpectContinueTimeout:  t.ExpectContinueTimeout,
 		ProxyConnectHeader:     t.ProxyConnectHeader.Clone(),
 		GetProxyConnectHeader:  t.GetProxyConnectHeader,
+		OnProxyConnectResponse: t.OnProxyConnectResponse,
 		MaxResponseHeaderBytes: t.MaxResponseHeaderBytes,
 		ForceAttemptHTTP2:      t.ForceAttemptHTTP2,
 		WriteBufferSize:        t.WriteBufferSize,
@@ -1717,6 +1723,11 @@ func (t *Transport) dialConn(ctx context.Context, cm connectMethod) (pconn *pers
 		if err != nil {
 			conn.Close()
 			return nil, err
+		}
+		if f := t.OnProxyConnectResponse; f != nil {
+			if err := f(ctx, cm.proxyURL, connectReq, resp); err != nil {
+				return nil, err
+			}
 		}
 		if resp.StatusCode != 200 {
 			_, text, ok := strings.Cut(resp.Status, " ")
