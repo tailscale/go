@@ -217,6 +217,10 @@ func (sd *sysDialer) dialUDP(ctx context.Context, laddr, raddr *UDPAddr) (*UDPCo
 }
 
 func (sl *sysListener) listenUDP(ctx context.Context, laddr *UDPAddr) (*UDPConn, error) {
+	if panicOnUnspecListen(laddr.IP) {
+		panic("tailscale: can't listen on unspecified address in test")
+	}
+
 	var ctrlCtxFn func(cxt context.Context, network, address string, c syscall.RawConn) error
 	if sl.ListenConfig.Control != nil {
 		ctrlCtxFn = func(cxt context.Context, network, address string, c syscall.RawConn) error {
