@@ -317,12 +317,6 @@ func (s *Server) wrap() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
-		// Keep Close from returning until the user's ConnState hook
-		// (if any) finishes. Without this, the call to forgetConn
-		// below might send the count to 0 before we run the hook.
-		s.wg.Add(1)
-		defer s.wg.Done()
-
 		switch cs {
 		case http.StateNew:
 			s.wg.Add(1)
@@ -358,7 +352,12 @@ func (s *Server) wrap() {
 				s.closeConn(c)
 			}
 		case http.StateHijacked, http.StateClosed:
-			s.forgetConn(c)
+			if _, ok := s.conns[c]; ok {
+				delete(s.conns, c)
+				// Keep Close from returning until the user's ConnState hook
+				// (if any) finishes.
+				defer s.wg.Done()
+			}
 		}
 		if oldHook != nil {
 			oldHook(c, cs)
@@ -376,15 +375,5 @@ func (s *Server) closeConnChan(c net.Conn, done chan<- struct{}) {
 	c.Close()
 	if done != nil {
 		done <- struct{}{}
-	}
-}
-
-// forgetConn removes c from the set of tracked conns and decrements it from the
-// waitgroup, unless it was previously removed.
-// s.mu must be held.
-func (s *Server) forgetConn(c net.Conn) {
-	if _, ok := s.conns[c]; ok {
-		delete(s.conns, c)
-		s.wg.Done()
 	}
 }
