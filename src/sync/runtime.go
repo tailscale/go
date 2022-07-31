@@ -17,7 +17,7 @@ func runtime_Semacquire(s *uint32)
 // If lifo is true, queue waiter at the head of wait queue.
 // skipframes is the number of frames to omit during tracing, counting from
 // runtime_SemacquireMutex's caller.
-func runtime_SemacquireMutex(s *uint32, lifo bool, skipframes int)
+func runtime_SemacquireMutex(s *uint32, lifo bool, skipframes int, optMetric *uint32)
 
 // Semrelease atomically increments *s and notifies a waiting goroutine
 // if one is blocked in Semacquire.

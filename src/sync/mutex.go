@@ -115,6 +115,7 @@ func (m *Mutex) TryLock() bool {
 }
 
 func (m *Mutex) lockSlow() {
+	atomic.AddUint32(&MetricMutexLockSlowAtomic, 1)
 	var waitStartTime int64
 	starving := false
 	awoke := false
@@ -168,7 +169,7 @@ func (m *Mutex) lockSlow() {
 			if waitStartTime == 0 {
 				waitStartTime = runtime_nanotime()
 			}
-			runtime_SemacquireMutex(&m.sema, queueLifo, 1)
+			runtime_SemacquireMutex(&m.sema, queueLifo, 1, nil)
 			starving = starving || runtime_nanotime()-waitStartTime > starvationThresholdNs
 			old = m.state
 			if old&mutexStarving != 0 {

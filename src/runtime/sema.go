@@ -73,7 +73,10 @@ func sync_runtime_Semrelease(addr *uint32, handoff bool, skipframes int) {
 }
 
 //go:linkname sync_runtime_SemacquireMutex sync.runtime_SemacquireMutex
-func sync_runtime_SemacquireMutex(addr *uint32, lifo bool, skipframes int) {
+func sync_runtime_SemacquireMutex(addr *uint32, lifo bool, skipframes int, optMetric *uint32) {
+	if optMetric != nil {
+		atomic.Xadd(optMetric, 1)
+	}
 	semacquire1(addr, lifo, semaBlockProfile|semaMutexProfile, skipframes)
 }
 

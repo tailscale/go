@@ -1,1 +1,3 @@
 pkg net/http, type Transport struct, OnProxyConnectResponse func(context.Context, *url.URL, *Request, *Response) error #999999
+pkg sync, var MetricMutexLockSlowAtomic uint32 #999999
+pkg sync, var MetricRWMutexRLockSlowAtomic uint32 #999999
