@@ -15,7 +15,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
     - name: checkout
       uses: actions/checkout@v2
@@ -23,7 +23,7 @@ jobs:
       run: cd src && ./all.bash
 
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     if: github.event_name == 'push'
     steps:
     - name: checkout
@@ -44,7 +44,7 @@ jobs:
         path: ../linux.tar.gz
 
   darwin:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     if: github.event_name == 'push'
     steps:
     - name: checkout
@@ -68,7 +68,7 @@ jobs:
         path: ../darwin.tar.gz
 
   linux-arm64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     if: github.event_name == 'push'
     steps:
     - name: checkout
@@ -94,7 +94,7 @@ jobs:
 
 
   darwin-arm64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     if: github.event_name == 'push'
     steps:
     - name: checkout
@@ -120,7 +120,7 @@ jobs:
 
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     if: github.event_name == 'push'
     needs: [test, linux, darwin, darwin-arm64, linux-arm64]
     steps:
