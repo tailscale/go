@@ -145,7 +145,7 @@ jobs:
   release:
     runs-on: ubuntu-20.04
     if: github.event_name == 'push'
-    needs: [test, linux, darwin, darwin-arm64, linux-arm64]
+    needs: [test, linux, linux-static, darwin, darwin-arm64, linux-arm64]
     steps:
     - name: download linux
       uses: actions/download-artifact@v1
