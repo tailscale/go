@@ -7,7 +7,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -119,7 +118,7 @@ func mkzcgo(dir, file string) {
 	writeHeader(&buf)
 	fmt.Fprintf(&buf, "package build\n")
 	fmt.Fprintln(&buf)
-	fmt.Fprintf(&buf, "const defaultCGO_ENABLED = %s\n", quote(os.Getenv("CGO_ENABLED")))
+	fmt.Fprintf(&buf, "const defaultCGO_ENABLED = %q\n", "")
 
 	writefile(buf.String(), file, writeSkipSame)
 }
