@@ -36,6 +36,7 @@ jobs:
       env:
         GOOS: "${{ matrix.GOOS }}"
         GOARCH: "${{ matrix.GOARCH }}"
+        CGO_ENABLED: "0"
     - name: trim unnecessary bits
       run: |
         rm -rf pkg/*_*
