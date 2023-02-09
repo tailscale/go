@@ -137,9 +137,7 @@ func osinit() {
 	ncpu = getncpu()
 	physPageSize = getPageSize()
 
-	if GOOS != "ios" {
-		osinit_hack()
-	}
+	osinit_hack()
 }
 
 func sysctlbynameInt32(name []byte) (int32, int32) {
