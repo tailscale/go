@@ -1,0 +1,2 @@
+pkg net, func SetDialEnforcer(func(context.Context, []Addr) error) #55
+pkg net, func SetResolveEnforcer(func(context.Context, string, string, string, Addr) error) #55
