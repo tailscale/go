@@ -192,10 +192,10 @@ func (r *failOnReadAfterErrorReader) Read(p []byte) (n int, err error) {
 // TestReadForm_NonFileMaxMemory asserts that the ReadForm maxMemory limit is applied
 // while processing non-file form data as well as file form data.
 func TestReadForm_NonFileMaxMemory(t *testing.T) {
-	n := 10<<20 + 25
 	if testing.Short() {
-		n = 10<<10 + 25
+		t.Skip("skipping in -short mode")
 	}
+	n := 10 << 20
 	largeTextValue := strings.Repeat("1", n)
 	message := `--MyBoundary
 Content-Disposition: form-data; name="largetext"
@@ -203,38 +203,29 @@ Content-Disposition: form-data; name="largetext"
 ` + largeTextValue + `
 --MyBoundary--
 `
-
 	testBody := strings.ReplaceAll(message, "\n", "\r\n")
-	testCases := []struct {
-		name      string
-		maxMemory int64
-		err       error
-	}{
-		{"smaller", 50 + int64(len("largetext")) + 100, nil},
-		{"exact-fit", 25 + int64(len("largetext")) + 100, nil},
-		{"too-large", 0, ErrMessageTooLarge},
+	// Try parsing the form with increasing maxMemory values.
+	// Changes in how we account for non-file form data may cause the exact point
+	// where we change from rejecting the form as too large to accepting it to vary,
+	// but we should see both successes and failures.
+	const failWhenMaxMemoryLessThan = 128
+	for maxMemory := int64(0); maxMemory < failWhenMaxMemoryLessThan*2; maxMemory += 16 {
+		b := strings.NewReader(testBody)
+		r := NewReader(b, boundary)
+		f, err := r.ReadForm(maxMemory)
+		if err != nil {
+			continue
+		}
+		if g := f.Value["largetext"][0]; g != largeTextValue {
+			t.Errorf("largetext mismatch: got size: %v, expected size: %v", len(g), len(largeTextValue))
+		}
+		f.RemoveAll()
+		if maxMemory < failWhenMaxMemoryLessThan {
+			t.Errorf("ReadForm(%v): no error, expect to hit memory limit when maxMemory < %v", maxMemory, failWhenMaxMemoryLessThan)
+		}
+		return
 	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.maxMemory == 0 && testing.Short() {
-				t.Skip("skipping in -short mode")
-			}
-			b := strings.NewReader(testBody)
-			r := NewReader(b, boundary)
-			f, err := r.ReadForm(tc.maxMemory)
-			if err == nil {
-				defer f.RemoveAll()
-			}
-			if tc.err != err {
-				t.Fatalf("ReadForm error - got: %v; expected: %v", err, tc.err)
-			}
-			if err == nil {
-				if g := f.Value["largetext"][0]; g != largeTextValue {
-					t.Errorf("largetext mismatch: got size: %v, expected size: %v", len(g), len(largeTextValue))
-				}
-			}
-		})
-	}
+	t.Errorf("ReadForm(x) failed for x < 1024, expect success")
 }
 
 // TestReadForm_MetadataTooLarge verifies that we account for the size of field names,
@@ -366,5 +357,115 @@ func testReadFormManyFiles(t *testing.T, distinct bool) {
 	}
 	if len(names) != 0 {
 		t.Fatalf("temp dir contains %v files; want 0", len(names))
+	}
+}
+
+func TestReadFormLimits(t *testing.T) {
+	for _, test := range []struct {
+		values           int
+		files            int
+		extraKeysPerFile int
+		wantErr          error
+		godebug          string
+	}{
+		{values: 1000},
+		{values: 1001, wantErr: ErrMessageTooLarge},
+		{values: 500, files: 500},
+		{values: 501, files: 500, wantErr: ErrMessageTooLarge},
+		{files: 1000},
+		{files: 1001, wantErr: ErrMessageTooLarge},
+		{files: 1, extraKeysPerFile: 9998}, // plus Content-Disposition and Content-Type
+		{files: 1, extraKeysPerFile: 10000, wantErr: ErrMessageTooLarge},
+		{godebug: "multipartmaxparts=100", values: 100},
+		{godebug: "multipartmaxparts=100", values: 101, wantErr: ErrMessageTooLarge},
+		{godebug: "multipartmaxheaders=100", files: 2, extraKeysPerFile: 48},
+		{godebug: "multipartmaxheaders=100", files: 2, extraKeysPerFile: 50, wantErr: ErrMessageTooLarge},
+	} {
+		name := fmt.Sprintf("values=%v/files=%v/extraKeysPerFile=%v", test.values, test.files, test.extraKeysPerFile)
+		if test.godebug != "" {
+			name += fmt.Sprintf("/godebug=%v", test.godebug)
+		}
+		t.Run(name, func(t *testing.T) {
+			if test.godebug != "" {
+				t.Setenv("GODEBUG", test.godebug)
+			}
+			var buf bytes.Buffer
+			fw := NewWriter(&buf)
+			for i := 0; i < test.values; i++ {
+				w, _ := fw.CreateFormField(fmt.Sprintf("field%v", i))
+				fmt.Fprintf(w, "value %v", i)
+			}
+			for i := 0; i < test.files; i++ {
+				h := make(textproto.MIMEHeader)
+				h.Set("Content-Disposition",
+					fmt.Sprintf(`form-data; name="file%v"; filename="file%v"`, i, i))
+				h.Set("Content-Type", "application/octet-stream")
+				for j := 0; j < test.extraKeysPerFile; j++ {
+					h.Set(fmt.Sprintf("k%v", j), "v")
+				}
+				w, _ := fw.CreatePart(h)
+				fmt.Fprintf(w, "value %v", i)
+			}
+			if err := fw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			fr := NewReader(bytes.NewReader(buf.Bytes()), fw.Boundary())
+			form, err := fr.ReadForm(1 << 10)
+			if err == nil {
+				defer form.RemoveAll()
+			}
+			if err != test.wantErr {
+				t.Errorf("ReadForm = %v, want %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func BenchmarkReadForm(b *testing.B) {
+	for _, test := range []struct {
+		name string
+		form func(fw *Writer, count int)
+	}{{
+		name: "fields",
+		form: func(fw *Writer, count int) {
+			for i := 0; i < count; i++ {
+				w, _ := fw.CreateFormField(fmt.Sprintf("field%v", i))
+				fmt.Fprintf(w, "value %v", i)
+			}
+		},
+	}, {
+		name: "files",
+		form: func(fw *Writer, count int) {
+			for i := 0; i < count; i++ {
+				w, _ := fw.CreateFormFile(fmt.Sprintf("field%v", i), fmt.Sprintf("file%v", i))
+				fmt.Fprintf(w, "value %v", i)
+			}
+		},
+	}} {
+		b.Run(test.name, func(b *testing.B) {
+			for _, maxMemory := range []int64{
+				0,
+				1 << 20,
+			} {
+				var buf bytes.Buffer
+				fw := NewWriter(&buf)
+				test.form(fw, 10)
+				if err := fw.Close(); err != nil {
+					b.Fatal(err)
+				}
+				b.Run(fmt.Sprintf("maxMemory=%v", maxMemory), func(b *testing.B) {
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
+						fr := NewReader(bytes.NewReader(buf.Bytes()), fw.Boundary())
+						form, err := fr.ReadForm(maxMemory)
+						if err != nil {
+							b.Fatal(err)
+						}
+						form.RemoveAll()
+					}
+
+				})
+			}
+		})
 	}
 }
