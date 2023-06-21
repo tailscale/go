@@ -6,12 +6,16 @@ package net
 
 import (
 	"context"
+	"syscall"
 )
 
 // SockTrace is a set of hooks to run at various operations on a network socket.
 // Any particular hook may be nil. Functions may be called concurrently from
 // different goroutines.
 type SockTrace struct {
+	// DidOpenTCPConn is called when a TCP socket was created. The
+	// underlying raw network connection that was created is provided.
+	DidCreateTCPConn func(c syscall.RawConn)
 	// DidRead is called after a successful read from the socket, where n bytes
 	// were read.
 	DidRead func(n int)
@@ -22,6 +26,9 @@ type SockTrace struct {
 	// subsequent call to WithSockTrace. The provided trace is the new trace
 	// that will be used.
 	WillOverwrite func(trace *SockTrace)
+	// WillCloseTCPConn is called when a TCP socket is about to be closed. The
+	// underlying raw network connection that is being closed is provided.
+	WillCloseTCPConn func(c syscall.RawConn)
 }
 
 // WithSockTrace returns a new context based on the provided parent

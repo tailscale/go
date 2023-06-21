@@ -6,3 +6,5 @@ pkg net, type SockTrace struct #58
 pkg net, type SockTrace struct, DidRead func(int) #58
 pkg net, type SockTrace struct, DidWrite func(int) #58
 pkg net, type SockTrace struct, WillOverwrite func(*SockTrace) #58
+pkg net, type SockTrace struct, DidCreateTCPConn func(syscall.RawConn) #58
+pkg net, type SockTrace struct, WillCloseTCPConn func(syscall.RawConn) #58
