@@ -393,6 +393,12 @@ func findgoversion() string {
 		// its content if available, which is empty at this point.
 		// Only use the VERSION file if it is non-empty.
 		if b != "" {
+			if rev := os.Getenv("TAILSCALE_TOOLCHAIN_REV"); rev != "" {
+				if len(rev) > 10 {
+					rev = rev[:10]
+				}
+				b += "-ts" + chomp(rev)
+			}
 			return b
 		}
 	}
