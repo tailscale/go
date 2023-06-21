@@ -1,2 +1,8 @@
 pkg net, func SetDialEnforcer(func(context.Context, []Addr) error) #55
 pkg net, func SetResolveEnforcer(func(context.Context, string, string, string, Addr) error) #55
+pkg net, func WithSockTrace(context.Context, *SockTrace) context.Context #58
+pkg net, func ContextSockTrace(context.Context) *SockTrace #58
+pkg net, type SockTrace struct #58
+pkg net, type SockTrace struct, DidRead func(int) #58
+pkg net, type SockTrace struct, DidWrite func(int) #58
+pkg net, type SockTrace struct, WillOverwrite func(*SockTrace) #58
