@@ -1,0 +1,108 @@
+name: Build toolchain
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - tailscale
+      - 'tailscale.go1.21'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  test:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+    - name: test
+      run: cd src && ./all.bash
+
+  build_release:
+    strategy:
+      matrix:
+        GOOS: ["linux", "darwin"]
+        GOARCH: ["amd64", "arm64"]
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'push'
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+    - name: build
+      run: cd src && ./make.bash
+      env:
+        GOOS: "${{ matrix.GOOS }}"
+        GOARCH: "${{ matrix.GOARCH }}"
+        CGO_ENABLED: "0"
+    - name: trim unnecessary bits
+      run: |
+        rm -rf pkg/*_*
+        mv pkg/tool/${{ matrix.GOOS }}_${{ matrix.GOARCH }} pkg
+        rm -rf pkg/tool/*_*
+        mv -f bin/${{ matrix.GOOS }}_${{ matrix.GOARCH }}/* bin/ || true
+        rm -rf bin/${{ matrix.GOOS }}_${{ matrix.GOARCH }}
+        mv pkg/${{ matrix.GOOS }}_${{ matrix.GOARCH }} pkg/tool
+        find . -type d -name 'testdata' -print0 | xargs -0 rm -rf
+        find . -name '*_test.go' -delete
+    - name: archive
+      run: cd .. && tar --exclude-vcs -zcf ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz go
+    - name: save
+      uses: actions/upload-artifact@v1
+      with:
+        name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
+        path: ../${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+
+  create_release:
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'push'
+    needs: [test, build_release]
+    outputs:
+      url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+    - name: create release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        # Release name can't be the same as tag name, sigh
+        tag_name: build-${{ github.sha }}
+        release_name: ${{ github.sha }}
+        draft: false
+        prerelease: true
+
+  upload_release:
+    strategy:
+      matrix:
+        GOOS: ["linux", "darwin"]
+        GOARCH: ["amd64", "arm64"]
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'push'
+    needs: [create_release]
+    steps:
+    - name: download artifact
+      uses: actions/download-artifact@v1
+      with:
+        name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
+    - name: upload artifact
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create_release.outputs.url }}
+        asset_path: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}/${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+        asset_name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+        asset_content_type: application/gzip
+
+  clean_old:
+    runs-on: ubuntu-20.04
+    if: github.event_name == 'push'
+    needs: [upload_release]
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+    - name: Delete older builds
+      run: ./.github/workflows/prune_old_builds.sh "${{ secrets.GITHUB_TOKEN }}"
