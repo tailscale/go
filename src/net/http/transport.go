@@ -511,6 +511,11 @@ func (t *Transport) alternateRoundTripper(req *Request) RoundTripper {
 
 // roundTrip implements a RoundTripper over HTTP.
 func (t *Transport) roundTrip(req *Request) (*Response, error) {
+	if roundTripEnforcer != nil {
+		if err := roundTripEnforcer(req); err != nil {
+			return nil, err
+		}
+	}
 	t.nextProtoOnce.Do(t.onceSetNextProtoDefaults)
 	ctx := req.Context()
 	trace := httptrace.ContextClientTrace(ctx)
