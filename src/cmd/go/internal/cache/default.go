@@ -59,7 +59,9 @@ func initDefaultCache() {
 		base.Fatalf("failed to initialize build cache at %s: %s\n", dir, err)
 	}
 
-	if v := cfg.Getenv("GOCACHEPROG"); v != "" && goexperiment.CacheProg {
+	// We don't require the GOEXPERIMENT in Tailscale's Go tree.
+	const isTailscaleGoTree = true
+	if v := cfg.Getenv("GOCACHEPROG"); v != "" && (isTailscaleGoTree || goexperiment.CacheProg) {
 		defaultCache = startCacheProg(v, diskCache)
 	} else {
 		defaultCache = diskCache
