@@ -79,8 +79,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         # Release name can't be the same as tag name, sigh
-        tag_name: build-${{ github.sha }}
-        release_name: ${{ github.sha }}
+        tag_name: build-${{ inputs.ref || github.sha }}
+        release_name: ${{ inputs.ref || github.sha }}
         draft: false
         prerelease: true
 
