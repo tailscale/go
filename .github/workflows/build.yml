@@ -11,6 +11,12 @@ on:
   pull_request:
     branches:
       - '*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, commit or tag to build from
+        required: true
+        default: 'tailscale.go1.21'
 
 jobs:
   test:
@@ -18,6 +24,8 @@ jobs:
     steps:
     - name: checkout
       uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.ref || github.ref }}
     - name: test
       run: cd src && ./all.bash
 
@@ -27,10 +35,12 @@ jobs:
         GOOS: ["linux", "darwin"]
         GOARCH: ["amd64", "arm64"]
     runs-on: ubuntu-20.04
-    if: github.event_name == 'push'
+    if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     steps:
     - name: checkout
       uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.ref || github.ref }}
     - name: build
       run: cd src && ./make.bash
       env:
@@ -57,7 +67,7 @@ jobs:
 
   create_release:
     runs-on: ubuntu-20.04
-    if: github.event_name == 'push'
+    if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     needs: [test, build_release]
     outputs:
       url: ${{ steps.create_release.outputs.upload_url }}
@@ -80,7 +90,7 @@ jobs:
         GOOS: ["linux", "darwin"]
         GOARCH: ["amd64", "arm64"]
     runs-on: ubuntu-20.04
-    if: github.event_name == 'push'
+    if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     needs: [create_release]
     steps:
     - name: download artifact
@@ -99,10 +109,14 @@ jobs:
 
   clean_old:
     runs-on: ubuntu-20.04
+    # Do not clean up old builds on workflow_dispatch to allow temporarily
+    # re-creating old releases for backports.
     if: github.event_name == 'push'
     needs: [upload_release]
     steps:
     - name: checkout
       uses: actions/checkout@v3
+      with:
+        ref: ${{ inputs.ref || github.ref }}
     - name: Delete older builds
       run: ./.github/workflows/prune_old_builds.sh "${{ secrets.GITHUB_TOKEN }}"
