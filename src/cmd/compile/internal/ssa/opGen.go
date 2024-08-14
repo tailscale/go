@@ -1717,12 +1717,16 @@ const (
 	OpARM64LoweredAtomicCas64Variant
 	OpARM64LoweredAtomicCas32Variant
 	OpARM64LoweredAtomicAnd8
-	OpARM64LoweredAtomicAnd32
 	OpARM64LoweredAtomicOr8
+	OpARM64LoweredAtomicAnd64
+	OpARM64LoweredAtomicOr64
+	OpARM64LoweredAtomicAnd32
 	OpARM64LoweredAtomicOr32
 	OpARM64LoweredAtomicAnd8Variant
-	OpARM64LoweredAtomicAnd32Variant
 	OpARM64LoweredAtomicOr8Variant
+	OpARM64LoweredAtomicAnd64Variant
+	OpARM64LoweredAtomicOr64Variant
+	OpARM64LoweredAtomicAnd32Variant
 	OpARM64LoweredAtomicOr32Variant
 	OpARM64LoweredWB
 	OpARM64LoweredPanicBoundsA
@@ -2116,6 +2120,8 @@ const (
 	OpPPC64SUBFCconst
 	OpPPC64FSUB
 	OpPPC64FSUBS
+	OpPPC64XSMINJDP
+	OpPPC64XSMAXJDP
 	OpPPC64MULLD
 	OpPPC64MULLW
 	OpPPC64MULLDconst
@@ -2146,6 +2152,7 @@ const (
 	OpPPC64ADDCconst
 	OpPPC64SUBCconst
 	OpPPC64ADDE
+	OpPPC64ADDZE
 	OpPPC64SUBE
 	OpPPC64ADDZEzero
 	OpPPC64SUBZEzero
@@ -2162,6 +2169,7 @@ const (
 	OpPPC64RLWNM
 	OpPPC64RLWMI
 	OpPPC64RLDICL
+	OpPPC64RLDICLCC
 	OpPPC64RLDICR
 	OpPPC64CNTLZD
 	OpPPC64CNTLZDCC
@@ -2218,6 +2226,7 @@ const (
 	OpPPC64ORconst
 	OpPPC64XORconst
 	OpPPC64ANDCCconst
+	OpPPC64ANDconst
 	OpPPC64MOVBreg
 	OpPPC64MOVBZreg
 	OpPPC64MOVHreg
@@ -2388,22 +2397,30 @@ const (
 	OpRISCV64MOVWUreg
 	OpRISCV64MOVDnop
 	OpRISCV64SLL
+	OpRISCV64SLLW
 	OpRISCV64SRA
 	OpRISCV64SRAW
 	OpRISCV64SRL
 	OpRISCV64SRLW
 	OpRISCV64SLLI
+	OpRISCV64SLLIW
 	OpRISCV64SRAI
 	OpRISCV64SRAIW
 	OpRISCV64SRLI
 	OpRISCV64SRLIW
-	OpRISCV64XOR
-	OpRISCV64XORI
-	OpRISCV64OR
-	OpRISCV64ORI
 	OpRISCV64AND
 	OpRISCV64ANDI
 	OpRISCV64NOT
+	OpRISCV64OR
+	OpRISCV64ORI
+	OpRISCV64ROL
+	OpRISCV64ROLW
+	OpRISCV64ROR
+	OpRISCV64RORI
+	OpRISCV64RORIW
+	OpRISCV64RORW
+	OpRISCV64XOR
+	OpRISCV64XORI
 	OpRISCV64SEQZ
 	OpRISCV64SNEZ
 	OpRISCV64SLT
@@ -2464,6 +2481,8 @@ const (
 	OpRISCV64FNES
 	OpRISCV64FLTS
 	OpRISCV64FLES
+	OpRISCV64LoweredFMAXS
+	OpRISCV64LoweredFMINS
 	OpRISCV64FADDD
 	OpRISCV64FSUBD
 	OpRISCV64FMULD
@@ -2489,6 +2508,8 @@ const (
 	OpRISCV64FNED
 	OpRISCV64FLTD
 	OpRISCV64FLED
+	OpRISCV64LoweredFMIND
+	OpRISCV64LoweredFMAXD
 
 	OpS390XFADDS
 	OpS390XFADD
@@ -3209,8 +3230,10 @@ const (
 	OpAtomicCompareAndSwap64
 	OpAtomicCompareAndSwapRel32
 	OpAtomicAnd8
-	OpAtomicAnd32
 	OpAtomicOr8
+	OpAtomicAnd64
+	OpAtomicAnd32
+	OpAtomicOr64
 	OpAtomicOr32
 	OpAtomicAdd32Variant
 	OpAtomicAdd64Variant
@@ -3219,8 +3242,10 @@ const (
 	OpAtomicCompareAndSwap32Variant
 	OpAtomicCompareAndSwap64Variant
 	OpAtomicAnd8Variant
-	OpAtomicAnd32Variant
 	OpAtomicOr8Variant
+	OpAtomicAnd64Variant
+	OpAtomicOr64Variant
+	OpAtomicAnd32Variant
 	OpAtomicOr32Variant
 	OpPubBarrier
 	OpClobber
@@ -22983,24 +23008,7 @@ var opcodeTable = [...]opInfo{
 		name:            "LoweredAtomicAnd8",
 		argLen:          3,
 		resultNotInArgs: true,
-		faultOnNilArg0:  true,
-		hasSideEffects:  true,
-		unsafePoint:     true,
-		asm:             arm64.AAND,
-		reg: regInfo{
-			inputs: []inputInfo{
-				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
-				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
-			},
-			outputs: []outputInfo{
-				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
-			},
-		},
-	},
-	{
-		name:            "LoweredAtomicAnd32",
-		argLen:          3,
-		resultNotInArgs: true,
+		needIntTemp:     true,
 		faultOnNilArg0:  true,
 		hasSideEffects:  true,
 		unsafePoint:     true,
@@ -23019,6 +23027,7 @@ var opcodeTable = [...]opInfo{
 		name:            "LoweredAtomicOr8",
 		argLen:          3,
 		resultNotInArgs: true,
+		needIntTemp:     true,
 		faultOnNilArg0:  true,
 		hasSideEffects:  true,
 		unsafePoint:     true,
@@ -23034,9 +23043,67 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:            "LoweredAtomicAnd64",
+		argLen:          3,
+		resultNotInArgs: true,
+		needIntTemp:     true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		asm:             arm64.AAND,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
+				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicOr64",
+		argLen:          3,
+		resultNotInArgs: true,
+		needIntTemp:     true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		asm:             arm64.AORR,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
+				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicAnd32",
+		argLen:          3,
+		resultNotInArgs: true,
+		needIntTemp:     true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		asm:             arm64.AAND,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
+				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
 		name:            "LoweredAtomicOr32",
 		argLen:          3,
 		resultNotInArgs: true,
+		needIntTemp:     true,
 		faultOnNilArg0:  true,
 		hasSideEffects:  true,
 		unsafePoint:     true,
@@ -23069,7 +23136,23 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:            "LoweredAtomicAnd32Variant",
+		name:            "LoweredAtomicOr8Variant",
+		argLen:          3,
+		resultNotInArgs: true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
+				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicAnd64Variant",
 		argLen:          3,
 		resultNotInArgs: true,
 		faultOnNilArg0:  true,
@@ -23086,11 +23169,28 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:            "LoweredAtomicOr8Variant",
+		name:            "LoweredAtomicOr64Variant",
 		argLen:          3,
 		resultNotInArgs: true,
 		faultOnNilArg0:  true,
 		hasSideEffects:  true,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
+				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicAnd32Variant",
+		argLen:          3,
+		resultNotInArgs: true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
@@ -28385,6 +28485,34 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:   "XSMINJDP",
+		argLen: 2,
+		asm:    ppc64.AXSMINJDP,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372032559808512}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30
+				{1, 9223372032559808512}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30
+			},
+			outputs: []outputInfo{
+				{0, 9223372032559808512}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30
+			},
+		},
+	},
+	{
+		name:   "XSMAXJDP",
+		argLen: 2,
+		asm:    ppc64.AXSMAXJDP,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372032559808512}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30
+				{1, 9223372032559808512}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30
+			},
+			outputs: []outputInfo{
+				{0, 9223372032559808512}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30
+			},
+		},
+	},
+	{
 		name:        "MULLD",
 		argLen:      2,
 		commutative: true,
@@ -28831,6 +28959,22 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:   "ADDZE",
+		argLen: 2,
+		asm:    ppc64.AADDZE,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 9223372036854775808}, // XER
+				{0, 1073733630},          // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+			clobbers: 9223372036854775808, // XER
+			outputs: []outputInfo{
+				{1, 9223372036854775808}, // XER
+				{0, 1073733624},          // R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+		},
+	},
+	{
 		name:   "SUBE",
 		argLen: 3,
 		asm:    ppc64.ASUBE,
@@ -29053,6 +29197,20 @@ var opcodeTable = [...]opInfo{
 		auxType: auxInt64,
 		argLen:  1,
 		asm:     ppc64.ARLDICL,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073733630}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+			outputs: []outputInfo{
+				{0, 1073733624}, // R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+		},
+	},
+	{
+		name:    "RLDICLCC",
+		auxType: auxInt64,
+		argLen:  1,
+		asm:     ppc64.ARLDICLCC,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 1073733630}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
@@ -29817,6 +29975,21 @@ var opcodeTable = [...]opInfo{
 		auxType: auxInt64,
 		argLen:  1,
 		asm:     ppc64.AANDCC,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073733630}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+			outputs: []outputInfo{
+				{0, 1073733624}, // R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+		},
+	},
+	{
+		name:         "ANDconst",
+		auxType:      auxInt64,
+		argLen:       1,
+		clobberFlags: true,
+		asm:          ppc64.AANDCC,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 1073733630}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
@@ -32042,6 +32215,20 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:   "SLLW",
+		argLen: 2,
+		asm:    riscv.ASLLW,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+				{1, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+			outputs: []outputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
 		name:   "SRA",
 		argLen: 2,
 		asm:    riscv.ASRA,
@@ -32112,6 +32299,20 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:    "SLLIW",
+		auxType: auxInt64,
+		argLen:  1,
+		asm:     riscv.ASLLIW,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+			outputs: []outputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
 		name:    "SRAI",
 		auxType: auxInt64,
 		argLen:  1,
@@ -32168,10 +32369,10 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:        "XOR",
+		name:        "AND",
 		argLen:      2,
 		commutative: true,
-		asm:         riscv.AXOR,
+		asm:         riscv.AAND,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
@@ -32183,10 +32384,23 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:    "XORI",
+		name:    "ANDI",
 		auxType: auxInt64,
 		argLen:  1,
-		asm:     riscv.AXORI,
+		asm:     riscv.AANDI,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+			outputs: []outputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
+		name:   "NOT",
+		argLen: 1,
+		asm:    riscv.ANOT,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
@@ -32226,10 +32440,9 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:        "AND",
-		argLen:      2,
-		commutative: true,
-		asm:         riscv.AAND,
+		name:   "ROL",
+		argLen: 2,
+		asm:    riscv.AROL,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
@@ -32241,10 +32454,38 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:    "ANDI",
+		name:   "ROLW",
+		argLen: 2,
+		asm:    riscv.AROLW,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+				{1, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+			outputs: []outputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
+		name:   "ROR",
+		argLen: 2,
+		asm:    riscv.AROR,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+				{1, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+			outputs: []outputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
+		name:    "RORI",
 		auxType: auxInt64,
 		argLen:  1,
-		asm:     riscv.AANDI,
+		asm:     riscv.ARORI,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
@@ -32255,9 +32496,53 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:   "NOT",
-		argLen: 1,
-		asm:    riscv.ANOT,
+		name:    "RORIW",
+		auxType: auxInt64,
+		argLen:  1,
+		asm:     riscv.ARORIW,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+			outputs: []outputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
+		name:   "RORW",
+		argLen: 2,
+		asm:    riscv.ARORW,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+				{1, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+			outputs: []outputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
+		name:        "XOR",
+		argLen:      2,
+		commutative: true,
+		asm:         riscv.AXOR,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+				{1, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+			outputs: []outputInfo{
+				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
+		name:    "XORI",
+		auxType: auxInt64,
+		argLen:  1,
+		asm:     riscv.AXORI,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
@@ -33073,6 +33358,38 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:            "LoweredFMAXS",
+		argLen:          2,
+		commutative:     true,
+		resultNotInArgs: true,
+		asm:             riscv.AFMAXS,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{1, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+			outputs: []outputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+		},
+	},
+	{
+		name:            "LoweredFMINS",
+		argLen:          2,
+		commutative:     true,
+		resultNotInArgs: true,
+		asm:             riscv.AFMINS,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{1, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+			outputs: []outputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+		},
+	},
+	{
 		name:        "FADDD",
 		argLen:      2,
 		commutative: true,
@@ -33423,6 +33740,38 @@ var opcodeTable = [...]opInfo{
 			},
 			outputs: []outputInfo{
 				{0, 1006632944}, // X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
+			},
+		},
+	},
+	{
+		name:            "LoweredFMIND",
+		argLen:          2,
+		commutative:     true,
+		resultNotInArgs: true,
+		asm:             riscv.AFMIND,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{1, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+			outputs: []outputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+		},
+	},
+	{
+		name:            "LoweredFMAXD",
+		argLen:          2,
+		commutative:     true,
+		resultNotInArgs: true,
+		asm:             riscv.AFMAXD,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{1, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+			outputs: []outputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
 			},
 		},
 	},
@@ -40384,13 +40733,25 @@ var opcodeTable = [...]opInfo{
 		generic:        true,
 	},
 	{
+		name:           "AtomicOr8",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicAnd64",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
 		name:           "AtomicAnd32",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicOr8",
+		name:           "AtomicOr64",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
@@ -40444,13 +40805,25 @@ var opcodeTable = [...]opInfo{
 		generic:        true,
 	},
 	{
-		name:           "AtomicAnd32Variant",
+		name:           "AtomicOr8Variant",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicOr8Variant",
+		name:           "AtomicAnd64Variant",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicOr64Variant",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicAnd32Variant",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,

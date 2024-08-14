@@ -257,13 +257,12 @@ func TestIssue22525(t *testing.T) {
 	got := "\n"
 	conf := Config{Error: func(err error) { got += err.Error() + "\n" }}
 	typecheck(src, &conf, nil) // do not crash
-	want := `
-p:1:27: a declared and not used
-p:1:30: b declared and not used
-p:1:33: c declared and not used
-p:1:36: d declared and not used
-p:1:39: e declared and not used
-`
+	want := "\n" +
+		"p:1:27: declared and not used: a\n" +
+		"p:1:30: declared and not used: b\n" +
+		"p:1:33: declared and not used: c\n" +
+		"p:1:36: declared and not used: d\n" +
+		"p:1:39: declared and not used: e\n"
 	if got != want {
 		t.Errorf("got: %swant: %s", got, want)
 	}
@@ -601,7 +600,7 @@ var _ T = template /* ERRORx "cannot use.*text/template.* as T value" */.Templat
 }
 
 func TestIssue50646(t *testing.T) {
-	anyType := Universe.Lookup("any").Type()
+	anyType := Universe.Lookup("any").Type().Underlying()
 	comparableType := Universe.Lookup("comparable").Type()
 
 	if !Comparable(anyType) {
@@ -698,14 +697,14 @@ func TestIssue51093(t *testing.T) {
 				n++
 				tpar, _ := tv.Type.(*TypeParam)
 				if tpar == nil {
-					t.Fatalf("%s: got type %s, want type parameter", syntax.String(x), tv.Type)
+					t.Fatalf("%s: got type %s, want type parameter", ExprString(x), tv.Type)
 				}
 				if name := tpar.Obj().Name(); name != "P" {
-					t.Fatalf("%s: got type parameter name %s, want P", syntax.String(x), name)
+					t.Fatalf("%s: got type parameter name %s, want P", ExprString(x), name)
 				}
 				// P(val) must not be constant
 				if tv.Value != nil {
-					t.Errorf("%s: got constant value %s (%s), want no constant", syntax.String(x), tv.Value, tv.Value.String())
+					t.Errorf("%s: got constant value %s (%s), want no constant", ExprString(x), tv.Value, tv.Value.String())
 				}
 			}
 		}
@@ -989,8 +988,8 @@ type A = []int
 type S struct{ A }
 `
 
-	t.Setenv("GODEBUG", "gotypesalias=1")
-	pkg := mustTypecheck(src, nil, nil)
+	conf := Config{EnableAlias: true}
+	pkg := mustTypecheck(src, &conf, nil)
 
 	S := pkg.Scope().Lookup("S")
 	if S == nil {
@@ -1092,4 +1091,33 @@ func _() {
 	// even though the (module) Go version is set to go1.17.
 	conf := Config{GoVersion: "go1.17"}
 	mustTypecheck(src, &conf, nil)
+}
+
+func TestIssue68334(t *testing.T) {
+	const src = `
+package p
+
+func f(x int) {
+	for i, j := range x {
+		_, _ = i, j
+	}
+	var a, b int
+	for a, b = range x {
+		_, _ = a, b
+	}
+}
+`
+
+	got := ""
+	conf := Config{
+		GoVersion: "go1.21",                                      // #68334 requires GoVersion <= 1.21
+		Error:     func(err error) { got += err.Error() + "\n" }, // #68334 requires Error != nil
+	}
+	typecheck(src, &conf, nil) // do not crash
+
+	want := "p:5:20: cannot range over x (variable of type int): requires go1.22 or later\n" +
+		"p:9:19: cannot range over x (variable of type int): requires go1.22 or later\n"
+	if got != want {
+		t.Errorf("got: %s want: %s", got, want)
+	}
 }

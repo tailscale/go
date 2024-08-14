@@ -28,6 +28,7 @@ import (
 	"cmd/internal/edit"
 	"cmd/internal/notsha256"
 	"cmd/internal/objabi"
+	"cmd/internal/telemetry/counter"
 )
 
 // A Package collects information about the package we're going to write.
@@ -242,6 +243,8 @@ var objDir = flag.String("objdir", "", "object directory")
 var importPath = flag.String("importpath", "", "import path of package being built (for comments in generated files)")
 var exportHeader = flag.String("exportheader", "", "where to write export header if any exported functions")
 
+var ldflags = flag.String("ldflags", "", "flags to pass to C linker")
+
 var gccgo = flag.Bool("gccgo", false, "generate files for use with gccgo")
 var gccgoprefix = flag.String("gccgoprefix", "", "-fgo-prefix option used with gccgo")
 var gccgopkgpath = flag.String("gccgopkgpath", "", "-fgo-pkgpath option used with gccgo")
@@ -255,8 +258,11 @@ var goarch, goos, gomips, gomips64 string
 var gccBaseCmd []string
 
 func main() {
+	counter.Open()
 	objabi.AddVersionFlag() // -V
 	objabi.Flagparse(usage)
+	counter.Inc("cgo/invocations")
+	counter.CountFlags("cgo/flag:", *flag.CommandLine)
 
 	if *gccgoDefineCgoIncomplete {
 		if !*gccgo {
@@ -328,11 +334,26 @@ func main() {
 		os.Exit(2)
 	}
 
-	// Record CGO_LDFLAGS from the environment for external linking.
-	if ldflags := os.Getenv("CGO_LDFLAGS"); ldflags != "" {
-		args, err := splitQuoted(ldflags)
+	// Record linker flags for external linking.
+	if *ldflags != "" {
+		args, err := splitQuoted(*ldflags)
 		if err != nil {
-			fatalf("bad CGO_LDFLAGS: %q (%s)", ldflags, err)
+			fatalf("bad -ldflags option: %q (%s)", *ldflags, err)
+		}
+		p.addToFlag("LDFLAGS", args)
+	}
+
+	// For backward compatibility for Bazel, record CGO_LDFLAGS
+	// from the environment for external linking.
+	// This should not happen with cmd/go, which removes CGO_LDFLAGS
+	// from the environment when invoking cgo.
+	// This can be removed when we no longer need to support
+	// older versions of Bazel. See issue #66456 and
+	// https://github.com/bazelbuild/rules_go/issues/3979.
+	if envFlags := os.Getenv("CGO_LDFLAGS"); envFlags != "" {
+		args, err := splitQuoted(envFlags)
+		if err != nil {
+			fatalf("bad CGO_LDFLAGS: %q (%s)", envFlags, err)
 		}
 		p.addToFlag("LDFLAGS", args)
 	}
@@ -385,11 +406,11 @@ func main() {
 	cPrefix = fmt.Sprintf("_%x", h.Sum(nil)[0:6])
 
 	if *objDir == "" {
-		// make sure that _obj directory exists, so that we can write
-		// all the output files there.
-		os.Mkdir("_obj", 0777)
 		*objDir = "_obj"
 	}
+	// make sure that `objDir` directory exists, so that we can write
+	// all the output files there.
+	os.MkdirAll(*objDir, 0o700)
 	*objDir += string(filepath.Separator)
 
 	for i, input := range goFiles {

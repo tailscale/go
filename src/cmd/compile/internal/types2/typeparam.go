@@ -25,8 +25,8 @@ type TypeParam struct {
 }
 
 // NewTypeParam returns a new TypeParam. Type parameters may be set on a Named
-// or Signature type by calling SetTypeParams. Setting a type parameter on more
-// than one type will result in a panic.
+// type by calling SetTypeParams. Setting a type parameter on more than one type
+// will result in a panic.
 //
 // The constraint argument can be nil, and set later via SetConstraint. If the
 // constraint is non-nil, it must be fully defined.
@@ -86,6 +86,10 @@ func (t *TypeParam) SetConstraint(bound Type) {
 	t.iface()
 }
 
+// Underlying returns the [underlying type] of the type parameter t, which is
+// the underlying type of its constraint. This type is always an interface.
+//
+// [underlying type]: https://go.dev/ref/spec#Underlying_types.
 func (t *TypeParam) Underlying() Type {
 	return t.iface()
 }

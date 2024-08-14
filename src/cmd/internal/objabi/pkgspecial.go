@@ -18,6 +18,8 @@ type PkgSpecial struct {
 	//
 	// - Optimizations are always enabled.
 	//
+	// - Checkptr is always disabled.
+	//
 	// This should be set for runtime and all packages it imports, and may be
 	// set for additional packages.
 	Runtime bool
@@ -43,13 +45,15 @@ type PkgSpecial struct {
 var runtimePkgs = []string{
 	"runtime",
 
-	"runtime/internal/atomic",
+	"internal/runtime/atomic",
+	"internal/runtime/exithook",
 	"runtime/internal/math",
 	"runtime/internal/sys",
-	"runtime/internal/syscall",
+	"internal/runtime/syscall",
 
 	"internal/abi",
 	"internal/bytealg",
+	"internal/byteorder",
 	"internal/chacha8rand",
 	"internal/coverage/rtcov",
 	"internal/cpu",
@@ -57,6 +61,8 @@ var runtimePkgs = []string{
 	"internal/godebugs",
 	"internal/goexperiment",
 	"internal/goos",
+	"internal/profilerecord",
+	"internal/stringslite",
 }
 
 // extraNoInstrumentPkgs is the set of packages in addition to runtimePkgs that
@@ -73,7 +79,7 @@ var extraNoInstrumentPkgs = []string{
 	"-internal/bytealg",
 }
 
-var noRaceFuncPkgs = []string{"sync", "sync/atomic"}
+var noRaceFuncPkgs = []string{"sync", "sync/atomic", "internal/runtime/atomic"}
 
 var allowAsmABIPkgs = []string{
 	"runtime",
@@ -81,7 +87,7 @@ var allowAsmABIPkgs = []string{
 	"syscall",
 	"internal/bytealg",
 	"internal/chacha8rand",
-	"runtime/internal/syscall",
+	"internal/runtime/syscall",
 	"runtime/internal/startlinetest",
 }
 

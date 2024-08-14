@@ -15,6 +15,7 @@ package net
 import (
 	"internal/bytealg"
 	"internal/itoa"
+	"internal/stringslite"
 	"net/netip"
 )
 
@@ -490,7 +491,8 @@ func (n *IPNet) String() string {
 // The string s can be in IPv4 dotted decimal ("192.0.2.1"), IPv6
 // ("2001:db8::68"), or IPv4-mapped IPv6 ("::ffff:192.0.2.1") form.
 // If s is not a valid textual representation of an IP address,
-// ParseIP returns nil.
+// ParseIP returns nil. The returned address is always 16 bytes,
+// IPv4 addresses are returned in IPv4-mapped IPv6 form.
 func ParseIP(s string) IP {
 	if addr, valid := parseIP(s); valid {
 		return IP(addr[:])
@@ -515,11 +517,10 @@ func parseIP(s string) ([16]byte, bool) {
 // For example, ParseCIDR("192.0.2.1/24") returns the IP address
 // 192.0.2.1 and the network 192.0.2.0/24.
 func ParseCIDR(s string) (IP, *IPNet, error) {
-	i := bytealg.IndexByteString(s, '/')
-	if i < 0 {
+	addr, mask, found := stringslite.Cut(s, "/")
+	if !found {
 		return nil, nil, &ParseError{Type: "CIDR address", Text: s}
 	}
-	addr, mask := s[:i], s[i+1:]
 
 	ipAddr, err := netip.ParseAddr(addr)
 	if err != nil || ipAddr.Zone() != "" {

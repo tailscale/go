@@ -213,7 +213,8 @@ func (w *Writer) Close() error {
 // The name must be a relative path: it must not start with a drive
 // letter (e.g. C:) or leading slash, and only forward slashes are
 // allowed. To create a directory instead of a file, add a trailing
-// slash to the name.
+// slash to the name. Duplicate names will not overwrite previous entries
+// and are appended to the zip file.
 // The file's contents must be written to the [io.Writer] before the next
 // call to [Writer.Create], [Writer.CreateHeader], or [Writer.Close].
 func (w *Writer) Create(name string) (io.Writer, error) {
@@ -433,6 +434,10 @@ func writeHeader(w io.Writer, h *header) error {
 // [Writer.CreateHeader], [Writer.CreateRaw], or [Writer.Close].
 //
 // In contrast to [Writer.CreateHeader], the bytes passed to Writer are not compressed.
+//
+// CreateRaw's argument is stored in w. If the argument is a pointer to the embedded
+// [FileHeader] in a [File] obtained from a [Reader] created from in-memory data,
+// then w will refer to all of that memory.
 func (w *Writer) CreateRaw(fh *FileHeader) (io.Writer, error) {
 	if err := w.prepare(fh); err != nil {
 		return nil, err
@@ -471,7 +476,10 @@ func (w *Writer) Copy(f *File) error {
 	if err != nil {
 		return err
 	}
-	fw, err := w.CreateRaw(&f.FileHeader)
+	// Copy the FileHeader so w doesn't store a pointer to the data
+	// of f's entire archive. See #65499.
+	fh := f.FileHeader
+	fw, err := w.CreateRaw(&fh)
 	if err != nil {
 		return err
 	}
@@ -601,7 +609,7 @@ func (w *fileWriter) writeDataDescriptor() error {
 	}
 	// Write data descriptor. This is more complicated than one would
 	// think, see e.g. comments in zipfile.c:putextended() and
-	// http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=7073588.
+	// https://bugs.openjdk.org/browse/JDK-7073588.
 	// The approach here is to write 8 byte sizes if needed without
 	// adding a zip64 extra in the local header (too late anyway).
 	var buf []byte

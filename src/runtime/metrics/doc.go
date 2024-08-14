@@ -230,6 +230,10 @@ Below is the full list of supported metrics, ordered lexicographically.
 	/gc/stack/starting-size:bytes
 		The stack size of new goroutines.
 
+	/godebug/non-default-behavior/asynctimerchan:events
+		The number of non-default behaviors executed by the time package
+		due to a non-default GODEBUG=asynctimerchan=... setting.
+
 	/godebug/non-default-behavior/execerrdot:events
 		The number of non-default behaviors executed by the os/exec
 		package due to a non-default GODEBUG=execerrdot=... setting.
@@ -267,14 +271,14 @@ Below is the full list of supported metrics, ordered lexicographically.
 		The number of non-default behaviors executed by the net/http
 		package due to a non-default GODEBUG=httpmuxgo121=... setting.
 
+	/godebug/non-default-behavior/httpservecontentkeepheaders:events
+		The number of non-default behaviors executed
+		by the net/http package due to a non-default
+		GODEBUG=httpservecontentkeepheaders=... setting.
+
 	/godebug/non-default-behavior/installgoroot:events
 		The number of non-default behaviors executed by the go/build
 		package due to a non-default GODEBUG=installgoroot=... setting.
-
-	/godebug/non-default-behavior/jstmpllitinterp:events
-		The number of non-default behaviors executed by
-		the html/template package due to a non-default
-		GODEBUG=jstmpllitinterp=... setting.
 
 	/godebug/non-default-behavior/multipartmaxheaders:events
 		The number of non-default behaviors executed by
@@ -311,6 +315,10 @@ Below is the full list of supported metrics, ordered lexicographically.
 		The number of non-default behaviors executed by the crypto/tls
 		package due to a non-default GODEBUG=tls10server=... setting.
 
+	/godebug/non-default-behavior/tls3des:events
+		The number of non-default behaviors executed by the crypto/tls
+		package due to a non-default GODEBUG=tls3des=... setting.
+
 	/godebug/non-default-behavior/tlsmaxrsasize:events
 		The number of non-default behaviors executed by the crypto/tls
 		package due to a non-default GODEBUG=tlsmaxrsasize=... setting.
@@ -322,6 +330,24 @@ Below is the full list of supported metrics, ordered lexicographically.
 	/godebug/non-default-behavior/tlsunsafeekm:events
 		The number of non-default behaviors executed by the crypto/tls
 		package due to a non-default GODEBUG=tlsunsafeekm=... setting.
+
+	/godebug/non-default-behavior/winreadlinkvolume:events
+		The number of non-default behaviors executed by the os package
+		due to a non-default GODEBUG=winreadlinkvolume=... setting.
+
+	/godebug/non-default-behavior/winsymlink:events
+		The number of non-default behaviors executed by the os package
+		due to a non-default GODEBUG=winsymlink=... setting.
+
+	/godebug/non-default-behavior/x509keypairleaf:events
+		The number of non-default behaviors executed by the crypto/tls
+		package due to a non-default GODEBUG=x509keypairleaf=...
+		setting.
+
+	/godebug/non-default-behavior/x509negativeserial:events
+		The number of non-default behaviors executed by the crypto/x509
+		package due to a non-default GODEBUG=x509negativeserial=...
+		setting.
 
 	/godebug/non-default-behavior/x509sha1:events
 		The number of non-default behaviors executed by the crypto/x509

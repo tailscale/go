@@ -114,7 +114,8 @@ func (sh *Shell) moveOrCopyFile(dst, src string, perm fs.FileMode, force bool) e
 	// Otherwise fall back to standard copy.
 
 	// If the source is in the build cache, we need to copy it.
-	if strings.HasPrefix(src, cache.DefaultDir()) {
+	dir, _ := cache.DefaultDir()
+	if strings.HasPrefix(src, dir) {
 		return sh.CopyFile(dst, src, perm, force)
 	}
 
@@ -494,7 +495,7 @@ func (sh *Shell) reportCmd(desc, dir string, cmdOut []byte, cmdErr error) error 
 	}
 
 	// Usually desc is already p.Desc(), but if not, signal cmdError.Error to
-	// add a line explicitly metioning the import path.
+	// add a line explicitly mentioning the import path.
 	needsPath := importPath != "" && p != nil && desc != p.Desc()
 
 	err := &cmdError{desc, out, importPath, needsPath}

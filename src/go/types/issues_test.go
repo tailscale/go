@@ -14,7 +14,7 @@ import (
 	"go/token"
 	"internal/testenv"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -115,7 +115,7 @@ type T struct{} // receiver type after method declaration
 	}
 
 	m := f.Decls[0].(*ast.FuncDecl)
-	res1 := defs[m.Name].(*Func).Type().(*Signature).Results().At(0)
+	res1 := defs[m.Name].(*Func).Signature().Results().At(0)
 	res2 := defs[m.Type.Results.List[0].Names[0]].(*Var)
 
 	if res1 != res2 {
@@ -172,7 +172,7 @@ L7 uses var z int`
 		fact := fmt.Sprintf("L%d uses %s", fset.Position(id.Pos()).Line, obj)
 		facts = append(facts, fact)
 	}
-	sort.Strings(facts)
+	slices.Sort(facts)
 
 	got := strings.Join(facts, "\n")
 	if got != want {
@@ -265,13 +265,12 @@ func TestIssue22525(t *testing.T) {
 	got := "\n"
 	conf := Config{Error: func(err error) { got += err.Error() + "\n" }}
 	typecheck(src, &conf, nil) // do not crash
-	want := `
-p:1:27: a declared and not used
-p:1:30: b declared and not used
-p:1:33: c declared and not used
-p:1:36: d declared and not used
-p:1:39: e declared and not used
-`
+	want := "\n" +
+		"p:1:27: declared and not used: a\n" +
+		"p:1:30: declared and not used: b\n" +
+		"p:1:33: declared and not used: c\n" +
+		"p:1:36: declared and not used: d\n" +
+		"p:1:39: declared and not used: e\n"
 	if got != want {
 		t.Errorf("got: %swant: %s", got, want)
 	}
@@ -370,7 +369,7 @@ func TestIssue28005(t *testing.T) {
 		// must match the method's name per the choice in the source file.
 		for i := 0; i < iface.NumMethods(); i++ {
 			m := iface.Method(i)
-			recvName := m.Type().(*Signature).Recv().Type().(*Named).Obj().Name()
+			recvName := m.Signature().Recv().Type().(*Named).Obj().Name()
 			if recvName != m.Name() {
 				t.Errorf("perm %v: got recv %s; want %s", perm, recvName, m.Name())
 			}
@@ -608,7 +607,7 @@ var _ T = template /* ERRORx "cannot use.*text/template.* as T value" */.Templat
 }
 
 func TestIssue50646(t *testing.T) {
-	anyType := Universe.Lookup("any").Type()
+	anyType := Universe.Lookup("any").Type().Underlying()
 	comparableType := Universe.Lookup("comparable").Type()
 
 	if !Comparable(anyType) {
@@ -1102,4 +1101,33 @@ func _() {
 	// even though the (module) Go version is set to go1.17.
 	conf := Config{GoVersion: "go1.17"}
 	mustTypecheck(src, &conf, nil)
+}
+
+func TestIssue68334(t *testing.T) {
+	const src = `
+package p
+
+func f(x int) {
+	for i, j := range x {
+		_, _ = i, j
+	}
+	var a, b int
+	for a, b = range x {
+		_, _ = a, b
+	}
+}
+`
+
+	got := ""
+	conf := Config{
+		GoVersion: "go1.21",                                      // #68334 requires GoVersion <= 1.21
+		Error:     func(err error) { got += err.Error() + "\n" }, // #68334 requires Error != nil
+	}
+	typecheck(src, &conf, nil) // do not crash
+
+	want := "p:5:20: cannot range over x (variable of type int): requires go1.22 or later\n" +
+		"p:9:19: cannot range over x (variable of type int): requires go1.22 or later\n"
+	if got != want {
+		t.Errorf("got: %s want: %s", got, want)
+	}
 }

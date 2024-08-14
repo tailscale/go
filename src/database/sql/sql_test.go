@@ -40,14 +40,7 @@ func init() {
 		freedFrom[c] = s
 	}
 	putConnHook = func(db *DB, c *driverConn) {
-		idx := -1
-		for i, v := range db.freeConn {
-			if v == c {
-				idx = i
-				break
-			}
-		}
-		if idx >= 0 {
+		if slices.Contains(db.freeConn, c) {
 			// print before panic, as panic may get lost due to conflicting panic
 			// (all goroutines asleep) elsewhere, since we might not unlock
 			// the mutex in freeConn here.
@@ -268,6 +261,7 @@ func TestQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
+	defer rows.Close()
 	type row struct {
 		age  int
 		name string
@@ -290,7 +284,7 @@ func TestQuery(t *testing.T) {
 		{age: 2, name: "Bob"},
 		{age: 3, name: "Chris"},
 	}
-	if !reflect.DeepEqual(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("mismatch.\n got: %#v\nwant: %#v", got, want)
 	}
 
@@ -354,7 +348,7 @@ func TestQueryContext(t *testing.T) {
 		{age: 1, name: "Alice"},
 		{age: 2, name: "Bob"},
 	}
-	if !reflect.DeepEqual(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("mismatch.\n got: %#v\nwant: %#v", got, want)
 	}
 
@@ -539,7 +533,7 @@ func TestMultiResultSetQuery(t *testing.T) {
 		{age: 2, name: "Bob"},
 		{age: 3, name: "Chris"},
 	}
-	if !reflect.DeepEqual(got1, want1) {
+	if !slices.Equal(got1, want1) {
 		t.Errorf("mismatch.\n got1: %#v\nwant: %#v", got1, want1)
 	}
 
@@ -565,7 +559,7 @@ func TestMultiResultSetQuery(t *testing.T) {
 		{name: "Bob"},
 		{name: "Chris"},
 	}
-	if !reflect.DeepEqual(got2, want2) {
+	if !slices.Equal(got2, want2) {
 		t.Errorf("mismatch.\n got: %#v\nwant: %#v", got2, want2)
 	}
 	if rows.NextResultSet() {
@@ -613,7 +607,7 @@ func TestQueryNamedArg(t *testing.T) {
 	want := []row{
 		{age: 2, name: "Bob"},
 	}
-	if !reflect.DeepEqual(got, want) {
+	if !slices.Equal(got, want) {
 		t.Errorf("mismatch.\n got: %#v\nwant: %#v", got, want)
 	}
 
@@ -723,7 +717,7 @@ func TestRowsColumns(t *testing.T) {
 		t.Fatalf("Columns: %v", err)
 	}
 	want := []string{"age", "name"}
-	if !reflect.DeepEqual(cols, want) {
+	if !slices.Equal(cols, want) {
 		t.Errorf("got %#v; want %#v", cols, want)
 	}
 	if err := rows.Close(); err != nil {
@@ -826,7 +820,7 @@ func TestQueryRow(t *testing.T) {
 		t.Fatalf("photo QueryRow+Scan: %v", err)
 	}
 	want := []byte("APHOTO")
-	if !reflect.DeepEqual(photo, want) {
+	if !slices.Equal(photo, want) {
 		t.Errorf("photo = %q; want %q", photo, want)
 	}
 }
@@ -1759,7 +1753,7 @@ func TestIssue6651(t *testing.T) {
 
 	want := "error in rows.Next"
 	rowsCursorNextHook = func(dest []driver.Value) error {
-		return fmt.Errorf(want)
+		return errors.New(want)
 	}
 	defer func() { rowsCursorNextHook = nil }()
 
@@ -1771,7 +1765,7 @@ func TestIssue6651(t *testing.T) {
 
 	want = "error in rows.Close"
 	setRowsCloseHook(func(rows *Rows, err *error) {
-		*err = fmt.Errorf(want)
+		*err = errors.New(want)
 	})
 	defer setRowsCloseHook(nil)
 	err = db.QueryRow("SELECT|people|name|").Scan(&v)
@@ -2403,9 +2397,6 @@ func TestConnMaxLifetime(t *testing.T) {
 	// Expire first conn
 	offset = 11 * time.Second
 	db.SetConnMaxLifetime(10 * time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	tx, err = db.Begin()
 	if err != nil {
@@ -4399,6 +4390,49 @@ func TestRowsScanProperlyWrapsErrors(t *testing.T) {
 	}
 }
 
+type alwaysErrValuer struct{}
+
+// errEmpty is returned when an empty value is found
+var errEmpty = errors.New("empty value")
+
+func (v alwaysErrValuer) Value() (driver.Value, error) {
+	return nil, errEmpty
+}
+
+// Issue 64707: Ensure that Stmt.Exec and Stmt.Query properly wraps underlying errors.
+func TestDriverArgsWrapsErrors(t *testing.T) {
+	db := newTestDB(t, "people")
+	defer closeDB(t, db)
+
+	t.Run("exec", func(t *testing.T) {
+		_, err := db.Exec("INSERT|keys|dec1=?", alwaysErrValuer{})
+		if err == nil {
+			t.Fatal("expecting back an error")
+		}
+		if !errors.Is(err, errEmpty) {
+			t.Fatalf("errors.Is mismatch\n%v\nWant: %v", err, errEmpty)
+		}
+		// Ensure that error substring matching still correctly works.
+		if !strings.Contains(err.Error(), errEmpty.Error()) {
+			t.Fatalf("Error %v does not contain %v", err, errEmpty)
+		}
+	})
+
+	t.Run("query", func(t *testing.T) {
+		_, err := db.Query("INSERT|keys|dec1=?", alwaysErrValuer{})
+		if err == nil {
+			t.Fatal("expecting back an error")
+		}
+		if !errors.Is(err, errEmpty) {
+			t.Fatalf("errors.Is mismatch\n%v\nWant: %v", err, errEmpty)
+		}
+		// Ensure that error substring matching still correctly works.
+		if !strings.Contains(err.Error(), errEmpty.Error()) {
+			t.Fatalf("Error %v does not contain %v", err, errEmpty)
+		}
+	})
+}
+
 func TestContextCancelDuringRawBytesScan(t *testing.T) {
 	for _, mode := range []string{"nocancel", "top", "bottom", "go"} {
 		t.Run(mode, func(t *testing.T) {
@@ -4529,6 +4563,53 @@ func TestNilErrorAfterClose(t *testing.T) {
 	time.Sleep(10 * time.Millisecond) // increase odds of seeing failure
 	if err := r.Err(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Issue #65201.
+//
+// If a RawBytes is reused across multiple queries,
+// subsequent queries shouldn't overwrite driver-owned memory from previous queries.
+func TestRawBytesReuse(t *testing.T) {
+	db := newTestDB(t, "people")
+	defer closeDB(t, db)
+
+	if _, err := db.Exec("USE_RAWBYTES"); err != nil {
+		t.Fatal(err)
+	}
+
+	var raw RawBytes
+
+	// The RawBytes in this query aliases driver-owned memory.
+	rows, err := db.Query("SELECT|people|name|")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows.Next()
+	rows.Scan(&raw) // now raw is pointing to driver-owned memory
+	name1 := string(raw)
+	rows.Close()
+
+	// The RawBytes in this query does not alias driver-owned memory.
+	rows, err = db.Query("SELECT|people|age|")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows.Next()
+	rows.Scan(&raw) // this must not write to the driver-owned memory in raw
+	rows.Close()
+
+	// Repeat the first query. Nothing should have changed.
+	rows, err = db.Query("SELECT|people|name|")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows.Next()
+	rows.Scan(&raw) // raw points to driver-owned memory again
+	name2 := string(raw)
+	rows.Close()
+	if name1 != name2 {
+		t.Fatalf("Scan read name %q, want %q", name2, name1)
 	}
 }
 

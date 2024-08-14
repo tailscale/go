@@ -6,6 +6,7 @@ package tls
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/hex"
@@ -41,9 +42,11 @@ import (
 // reference connection will always change.
 
 var (
-	update  = flag.Bool("update", false, "update golden files on failure")
-	fast    = flag.Bool("fast", false, "impose a quick, possibly flaky timeout on recorded tests")
-	keyFile = flag.String("keylog", "", "destination file for KeyLogWriter")
+	update       = flag.Bool("update", false, "update golden files on failure")
+	keyFile      = flag.String("keylog", "", "destination file for KeyLogWriter")
+	bogoMode     = flag.Bool("bogo-mode", false, "Enabled bogo shim mode, ignore everything else")
+	bogoFilter   = flag.String("bogo-filter", "", "BoGo test filter")
+	bogoLocalDir = flag.String("bogo-local-dir", "", "Local BoGo to use, instead of fetching from source")
 )
 
 func runTestAndUpdateIfNeeded(t *testing.T, name string, run func(t *testing.T, update bool), wait bool) {
@@ -220,6 +223,76 @@ func parseTestData(r io.Reader) (flows [][]byte, err error) {
 	return flows, nil
 }
 
+// replayingConn is a net.Conn that replays flows recorded by recordingConn.
+type replayingConn struct {
+	t testing.TB
+	sync.Mutex
+	flows   [][]byte
+	reading bool
+}
+
+var _ net.Conn = (*replayingConn)(nil)
+
+func (r *replayingConn) Read(b []byte) (n int, err error) {
+	r.Lock()
+	defer r.Unlock()
+
+	if !r.reading {
+		r.t.Errorf("expected write, got read")
+		return 0, fmt.Errorf("recording expected write, got read")
+	}
+
+	n = copy(b, r.flows[0])
+	r.flows[0] = r.flows[0][n:]
+	if len(r.flows[0]) == 0 {
+		r.flows = r.flows[1:]
+		if len(r.flows) == 0 {
+			return n, io.EOF
+		} else {
+			r.reading = false
+		}
+	}
+	return n, nil
+}
+
+func (r *replayingConn) Write(b []byte) (n int, err error) {
+	r.Lock()
+	defer r.Unlock()
+
+	if r.reading {
+		r.t.Errorf("expected read, got write")
+		return 0, fmt.Errorf("recording expected read, got write")
+	}
+
+	if !bytes.HasPrefix(r.flows[0], b) {
+		r.t.Errorf("write mismatch: expected %x, got %x", r.flows[0], b)
+		return 0, fmt.Errorf("write mismatch")
+	}
+	r.flows[0] = r.flows[0][len(b):]
+	if len(r.flows[0]) == 0 {
+		r.flows = r.flows[1:]
+		r.reading = true
+	}
+	return len(b), nil
+}
+
+func (r *replayingConn) Close() error {
+	r.Lock()
+	defer r.Unlock()
+
+	if len(r.flows) > 0 {
+		r.t.Errorf("closed with unfinished flows")
+		return fmt.Errorf("unexpected close")
+	}
+	return nil
+}
+
+func (r *replayingConn) LocalAddr() net.Addr                { return nil }
+func (r *replayingConn) RemoteAddr() net.Addr               { return nil }
+func (r *replayingConn) SetDeadline(t time.Time) error      { return nil }
+func (r *replayingConn) SetReadDeadline(t time.Time) error  { return nil }
+func (r *replayingConn) SetWriteDeadline(t time.Time) error { return nil }
+
 // tempFile creates a temp file containing contents and returns its path.
 func tempFile(contents string) string {
 	file, err := os.CreateTemp("", "go-tls-test")
@@ -294,6 +367,8 @@ Dialing:
 
 			case c2 := <-localListener.ch:
 				if c2.RemoteAddr().String() == c1.LocalAddr().String() {
+					t.Cleanup(func() { c1.Close() })
+					t.Cleanup(func() { c2.Close() })
 					return c1, c2
 				}
 				t.Logf("localPipe: unexpected connection: %v != %v", c2.RemoteAddr(), c1.LocalAddr())
@@ -310,10 +385,7 @@ Dialing:
 type zeroSource struct{}
 
 func (zeroSource) Read(b []byte) (n int, err error) {
-	for i := range b {
-		b[i] = 0
-	}
-
+	clear(b)
 	return len(b), nil
 }
 
@@ -329,7 +401,21 @@ func allCipherSuites() []uint16 {
 var testConfig *Config
 
 func TestMain(m *testing.M) {
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args)
+		flag.PrintDefaults()
+		if *bogoMode {
+			os.Exit(89)
+		}
+	}
+
 	flag.Parse()
+
+	if *bogoMode {
+		bogoShim()
+		os.Exit(0)
+	}
+
 	os.Exit(runMain(m))
 }
 
@@ -363,6 +449,7 @@ func runMain(m *testing.M) int {
 		Certificates:       make([]Certificate, 2),
 		InsecureSkipVerify: true,
 		CipherSuites:       allCipherSuites(),
+		CurvePreferences:   []CurveID{X25519, CurveP256, CurveP384, CurveP521},
 		MinVersion:         VersionTLS10,
 		MaxVersion:         VersionTLS13,
 	}
@@ -386,7 +473,7 @@ func runMain(m *testing.M) int {
 func testHandshake(t *testing.T, clientConfig, serverConfig *Config) (serverState, clientState ConnectionState, err error) {
 	const sentinel = "SENTINEL\n"
 	c, s := localPipe(t)
-	errChan := make(chan error)
+	errChan := make(chan error, 1)
 	go func() {
 		cli := Client(c, clientConfig)
 		err := cli.Handshake()
@@ -395,7 +482,7 @@ func testHandshake(t *testing.T, clientConfig, serverConfig *Config) (serverStat
 			c.Close()
 			return
 		}
-		defer cli.Close()
+		defer func() { errChan <- nil }()
 		clientState = cli.ConnectionState()
 		buf, err := io.ReadAll(cli)
 		if err != nil {
@@ -404,7 +491,10 @@ func testHandshake(t *testing.T, clientConfig, serverConfig *Config) (serverStat
 		if got := string(buf); got != sentinel {
 			t.Errorf("read %q from TLS connection, but expected %q", got, sentinel)
 		}
-		errChan <- nil
+		// We discard the error because after ReadAll returns the server must
+		// have already closed the connection. Sending data (the closeNotify
+		// alert) can cause a reset, that will make Close return an error.
+		cli.Close()
 	}()
 	server := Server(s, serverConfig)
 	err = server.Handshake()
@@ -416,11 +506,11 @@ func testHandshake(t *testing.T, clientConfig, serverConfig *Config) (serverStat
 		if err := server.Close(); err != nil {
 			t.Errorf("failed to call server.Close: %v", err)
 		}
-		err = <-errChan
 	} else {
+		err = fmt.Errorf("server: %v", err)
 		s.Close()
-		<-errChan
 	}
+	err = errors.Join(err, <-errChan)
 	return
 }
 

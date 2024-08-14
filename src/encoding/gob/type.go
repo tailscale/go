@@ -590,16 +590,6 @@ func isSent(struct_ reflect.Type, field *reflect.StructField) bool {
 		return false
 	}
 
-	// Special case for Go 1.22: the x509.Certificate.Policies
-	// field is unencodable but also unused by default.
-	// Ignore it, so that x509.Certificate continues to be encodeable.
-	// Go 1.23 will add the right methods so that gob can
-	// handle the Policies field, and then we can remove this check.
-	// See go.dev/issue/65633.
-	if field.Name == "Policies" && struct_.PkgPath() == "crypto/x509" && struct_.Name() == "Certificate" {
-		return false
-	}
-
 	return true
 }
 

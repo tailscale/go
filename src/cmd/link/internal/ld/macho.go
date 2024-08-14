@@ -195,11 +195,12 @@ const (
 )
 
 const (
-	PLATFORM_MACOS    MachoPlatform = 1
-	PLATFORM_IOS      MachoPlatform = 2
-	PLATFORM_TVOS     MachoPlatform = 3
-	PLATFORM_WATCHOS  MachoPlatform = 4
-	PLATFORM_BRIDGEOS MachoPlatform = 5
+	PLATFORM_MACOS       MachoPlatform = 1
+	PLATFORM_IOS         MachoPlatform = 2
+	PLATFORM_TVOS        MachoPlatform = 3
+	PLATFORM_WATCHOS     MachoPlatform = 4
+	PLATFORM_BRIDGEOS    MachoPlatform = 5
+	PLATFORM_MACCATALYST MachoPlatform = 6
 )
 
 // rebase table opcode
@@ -478,13 +479,11 @@ func (ctxt *Link) domacho() {
 		if ctxt.LinkMode == LinkInternal && machoPlatform == PLATFORM_MACOS {
 			var version uint32
 			switch ctxt.Arch.Family {
-			case sys.AMD64:
+			case sys.ARM64, sys.AMD64:
 				// This must be fairly recent for Apple signing (go.dev/issue/30488).
 				// Having too old a version here was also implicated in some problems
 				// calling into macOS libraries (go.dev/issue/56784).
 				// In general this can be the most recent supported macOS version.
-				version = 10<<16 | 13<<8 | 0<<0 // 10.13.0
-			case sys.ARM64:
 				version = 11<<16 | 0<<8 | 0<<0 // 11.0.0
 			}
 			ml := newMachoLoad(ctxt.Arch, LC_BUILD_VERSION, 4)
@@ -975,7 +974,7 @@ func collectmachosyms(ctxt *Link) {
 		// Some 64-bit functions have a "$INODE64" or "$INODE64$UNIX2003" suffix.
 		if t == sym.SDYNIMPORT && ldr.SymDynimplib(s) == "/usr/lib/libSystem.B.dylib" {
 			// But only on macOS.
-			if machoPlatform == PLATFORM_MACOS {
+			if machoPlatform == PLATFORM_MACOS || machoPlatform == PLATFORM_MACCATALYST {
 				switch n := ldr.SymExtname(s); n {
 				case "fdopendir":
 					switch buildcfg.GOARCH {

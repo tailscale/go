@@ -111,12 +111,11 @@ func Generate(w io.Writer, rpt *Report, obj plugin.ObjTool) error {
 		return printAssembly(w, rpt, obj)
 	case List:
 		return printSource(w, rpt)
-	case WebList:
-		return printWebSource(w, rpt, obj)
 	case Callgrind:
 		return printCallgrind(w, rpt)
 	}
-	return fmt.Errorf("unexpected output format")
+	// Note: WebList handling is in driver package.
+	return fmt.Errorf("unexpected output format %v", o.OutputFormat)
 }
 
 // newTrimmedGraph creates a graph for this report, trimmed according
@@ -293,7 +292,7 @@ func (rpt *Report) newGraph(nodes graph.NodeSet) *graph.Graph {
 	return graph.New(rpt.prof, gopt)
 }
 
-// printProto writes the incoming proto via thw writer w.
+// printProto writes the incoming proto via the writer w.
 // If the divide_by option has been specified, samples are scaled appropriately.
 func printProto(w io.Writer, rpt *Report) error {
 	p, o := rpt.prof, rpt.options
@@ -339,6 +338,7 @@ func printTopProto(w io.Writer, rpt *Report) error {
 			Line: []profile.Line{
 				{
 					Line:     int64(n.Info.Lineno),
+					Column:   int64(n.Info.Columnno),
 					Function: f,
 				},
 			},
@@ -1325,6 +1325,9 @@ type Report struct {
 
 // Total returns the total number of samples in a report.
 func (rpt *Report) Total() int64 { return rpt.total }
+
+// OutputFormat returns the output format for the report.
+func (rpt *Report) OutputFormat() int { return rpt.options.OutputFormat }
 
 func abs64(i int64) int64 {
 	if i < 0 {

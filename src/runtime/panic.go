@@ -7,7 +7,8 @@ package runtime
 import (
 	"internal/abi"
 	"internal/goarch"
-	"runtime/internal/atomic"
+	"internal/runtime/atomic"
+	"internal/stringslite"
 	"runtime/internal/sys"
 	"unsafe"
 )
@@ -53,7 +54,7 @@ const (
 // pc should be the program counter of the compiler-generated code that
 // triggered this panic.
 func panicCheck1(pc uintptr, msg string) {
-	if goarch.IsWasm == 0 && hasPrefix(funcname(findfunc(pc)), "runtime.") {
+	if goarch.IsWasm == 0 && stringslite.HasPrefix(funcname(findfunc(pc)), "runtime.") {
 		// Note: wasm can't tail call, so we can't get the original caller's pc.
 		throw(msg)
 	}
@@ -296,11 +297,24 @@ func deferproc(fn func()) {
 	// been set and must not be clobbered.
 }
 
-var rangeExitError = error(errorString("range function continued iteration after exit"))
+var rangeDoneError = error(errorString("range function continued iteration after function for loop body returned false"))
+var rangePanicError = error(errorString("range function continued iteration after loop body panic"))
+var rangeExhaustedError = error(errorString("range function continued iteration after whole loop exit"))
+var rangeMissingPanicError = error(errorString("range function recovered a loop body panic and did not resume panicking"))
 
 //go:noinline
-func panicrangeexit() {
-	panic(rangeExitError)
+func panicrangestate(state int) {
+	switch abi.RF_State(state) {
+	case abi.RF_DONE:
+		panic(rangeDoneError)
+	case abi.RF_PANIC:
+		panic(rangePanicError)
+	case abi.RF_EXHAUSTED:
+		panic(rangeExhaustedError)
+	case abi.RF_MISSING_PANIC:
+		panic(rangeMissingPanicError)
+	}
+	throw("unexpected state passed to panicrangestate")
 }
 
 // deferrangefunc is called by functions that are about to
@@ -420,17 +434,18 @@ func deferprocat(fn func(), frame any) {
 	return0()
 }
 
-// deferconvert converts a rangefunc defer list into an ordinary list.
+// deferconvert converts the rangefunc defer list of d0 into an ordinary list
+// following d0.
 // See the doc comment for deferrangefunc for details.
-func deferconvert(d *_defer) *_defer {
-	head := d.head
+func deferconvert(d0 *_defer) {
+	head := d0.head
 	if raceenabled {
 		racereadpc(unsafe.Pointer(head), getcallerpc(), abi.FuncPCABIInternal(deferconvert))
 	}
-	tail := d.link
-	d.rangefunc = false
-	d0 := d
+	tail := d0.link
+	d0.rangefunc = false
 
+	var d *_defer
 	for {
 		d = head.Load()
 		if head.CompareAndSwap(d, badDefer()) {
@@ -438,8 +453,7 @@ func deferconvert(d *_defer) *_defer {
 		}
 	}
 	if d == nil {
-		freedefer(d0)
-		return tail
+		return
 	}
 	for d1 := d; ; d1 = d1.link {
 		d1.sp = d0.sp
@@ -449,8 +463,8 @@ func deferconvert(d *_defer) *_defer {
 			break
 		}
 	}
-	freedefer(d0)
-	return d
+	d0.link = d
+	return
 }
 
 // deferprocStack queues a new deferred function with a defer record on the stack.
@@ -528,22 +542,18 @@ func newdefer() *_defer {
 	return d
 }
 
-// Free the given defer.
-// The defer cannot be used after this call.
-//
-// This is nosplit because the incoming defer is in a perilous state.
-// It's not on any defer list, so stack copying won't adjust stack
-// pointers in it (namely, d.link). Hence, if we were to copy the
-// stack, d could then contain a stale pointer.
-//
-//go:nosplit
-func freedefer(d *_defer) {
+// popDefer pops the head of gp's defer list and frees it.
+func popDefer(gp *g) {
+	d := gp._defer
+	d.fn = nil // Can in theory point to the stack
+	// We must not copy the stack between the updating gp._defer and setting
+	// d.link to nil. Between these two steps, d is not on any defer list, so
+	// stack copying won't adjust stack pointers in it (namely, d.link). Hence,
+	// if we were to copy the stack, d could then contain a stale pointer.
+	gp._defer = d.link
 	d.link = nil
 	// After this point we can copy the stack.
 
-	if d.fn != nil {
-		freedeferfn()
-	}
 	if !d.heap {
 		return
 	}
@@ -577,13 +587,6 @@ func freedefer(d *_defer) {
 
 	releasem(mp)
 	mp, pp = nil, nil
-}
-
-// Separate function so that it can split stack.
-// Windows otherwise runs out of stack space.
-func freedeferfn() {
-	// fn must be cleared before d is unlinked from gp.
-	throw("freedefer with d.fn != nil")
 }
 
 // deferreturn runs deferred functions for the caller's frame.
@@ -667,7 +670,7 @@ func printpanics(p *_panic) {
 		return
 	}
 	print("panic: ")
-	printany(p.arg)
+	printpanicval(p.arg)
 	if p.recovered {
 		print(" [recovered]")
 	}
@@ -717,6 +720,18 @@ func (*PanicNilError) RuntimeError() {}
 var panicnil = &godebugInc{name: "panicnil"}
 
 // The implementation of the predeclared function panic.
+// The compiler emits calls to this function.
+//
+// gopanic should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - go.undefinedlabs.com/scopeagent
+//   - github.com/goplus/igop
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname gopanic
 func gopanic(e any) {
 	if e == nil {
 		if debug.panicnil.Load() != 1 {
@@ -729,20 +744,20 @@ func gopanic(e any) {
 	gp := getg()
 	if gp.m.curg != gp {
 		print("panic: ")
-		printany(e)
+		printpanicval(e)
 		print("\n")
 		throw("panic on system stack")
 	}
 
 	if gp.m.mallocing != 0 {
 		print("panic: ")
-		printany(e)
+		printpanicval(e)
 		print("\n")
 		throw("panic during malloc")
 	}
 	if gp.m.preemptoff != "" {
 		print("panic: ")
-		printany(e)
+		printpanicval(e)
 		print("\n")
 		print("preempt off reason: ")
 		print(gp.m.preemptoff)
@@ -751,7 +766,7 @@ func gopanic(e any) {
 	}
 	if gp.m.locks != 0 {
 		print("panic: ")
-		printany(e)
+		printpanicval(e)
 		print("\n")
 		throw("panic holding locks")
 	}
@@ -768,6 +783,16 @@ func gopanic(e any) {
 			break
 		}
 		fn()
+	}
+
+	// If we're tracing, flush the current generation to make the trace more
+	// readable.
+	//
+	// TODO(aktau): Handle a panic from within traceAdvance more gracefully.
+	// Currently it would hang. Not handled now because it is very unlikely, and
+	// already unrecoverable.
+	if traceEnabled() {
+		traceAdvance(false)
 	}
 
 	// ran out of deferred calls - old-school panic now
@@ -876,12 +901,12 @@ func (p *_panic) nextDefer() (func(), bool) {
 	Recheck:
 		if d := gp._defer; d != nil && d.sp == uintptr(p.sp) {
 			if d.rangefunc {
-				gp._defer = deferconvert(d)
+				deferconvert(d)
+				popDefer(gp)
 				goto Recheck
 			}
 
 			fn := d.fn
-			d.fn = nil
 
 			// TODO(mdempsky): Instead of having each deferproc call have
 			// its own "deferreturn(); return" sequence, we should just make
@@ -889,8 +914,7 @@ func (p *_panic) nextDefer() (func(), bool) {
 			p.retpc = d.pc
 
 			// Unlink and free.
-			gp._defer = d.link
-			freedefer(d)
+			popDefer(gp)
 
 			return fn, true
 		}
@@ -1012,12 +1036,32 @@ func sync_fatal(s string) {
 // throw should be used for runtime-internal fatal errors where Go itself,
 // rather than user code, may be at fault for the failure.
 //
+// NOTE: temporarily marked "go:noinline" pending investigation/fix of
+// issue #67274, so as to fix longtest builders.
+//
+// throw should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - github.com/bytedance/sonic
+//   - github.com/cockroachdb/pebble
+//   - github.com/dgraph-io/ristretto
+//   - github.com/outcaste-io/ristretto
+//   - github.com/pingcap/br
+//   - gvisor.dev/gvisor
+//   - github.com/sagernet/gvisor
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname throw
 //go:nosplit
 func throw(s string) {
 	// Everything throw does should be recursively nosplit so it
 	// can be called even when it's unsafe to grow the stack.
 	systemstack(func() {
-		print("fatal error: ", s, "\n")
+		print("fatal error: ")
+		printindented(s) // logically printpanicval(s), but avoids convTstring write barrier
+		print("\n")
 	})
 
 	fatalthrow(throwTypeRuntime)
@@ -1036,7 +1080,9 @@ func fatal(s string) {
 	// Everything fatal does should be recursively nosplit so it
 	// can be called even when it's unsafe to grow the stack.
 	systemstack(func() {
-		print("fatal error: ", s, "\n")
+		print("fatal error: ")
+		printindented(s) // logically printpanicval(s), but avoids convTstring write barrier
+		print("\n")
 	})
 
 	fatalthrow(throwTypeUser)

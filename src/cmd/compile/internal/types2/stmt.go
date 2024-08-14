@@ -64,7 +64,7 @@ func (check *Checker) usage(scope *Scope) {
 		return cmpPos(unused[i].pos, unused[j].pos) < 0
 	})
 	for _, v := range unused {
-		check.softErrorf(v.pos, UnusedVar, "%s declared and not used", v.name)
+		check.softErrorf(v.pos, UnusedVar, "declared and not used: %s", v.name)
 	}
 
 	for _, scope := range scope.children {
@@ -186,7 +186,7 @@ func (check *Checker) suspendedCall(keyword string, call syntax.Expr) {
 	case statement:
 		return
 	default:
-		unreachable()
+		panic("unreachable")
 	}
 	check.errorf(&x, code, "%s %s %s", keyword, msg, &x)
 }
@@ -260,11 +260,10 @@ L:
 			// (quadratic algorithm, but these lists tend to be very short)
 			for _, vt := range seen[val] {
 				if Identical(v.typ, vt.typ) {
-					var err error_
-					err.code = DuplicateCase
-					err.errorf(&v, "duplicate case %s in expression switch", &v)
-					err.errorf(vt.pos, "previous case")
-					check.report(&err)
+					err := check.newError(DuplicateCase)
+					err.addf(&v, "duplicate case %s in expression switch", &v)
+					err.addf(vt.pos, "previous case")
+					err.report()
 					continue L
 				}
 			}
@@ -283,7 +282,11 @@ func (check *Checker) isNil(e syntax.Expr) bool {
 	return false
 }
 
-// If the type switch expression is invalid, x is nil.
+// caseTypes typechecks the type expressions of a type case, checks for duplicate types
+// using the seen map, and verifies that each type is valid with respect to the type of
+// the operand x in the type switch clause. If the type switch expression is invalid, x
+// must be nil. The result is the type of the last type expression; it is nil if the
+// expression denotes the predeclared nil.
 func (check *Checker) caseTypes(x *operand, types []syntax.Expr, seen map[Type]syntax.Expr) (T Type) {
 	var dummy operand
 L:
@@ -307,11 +310,10 @@ L:
 				if T != nil {
 					Ts = TypeString(T, check.qualifier)
 				}
-				var err error_
-				err.code = DuplicateCase
-				err.errorf(e, "duplicate case %s in type switch", Ts)
-				err.errorf(other, "previous case")
-				check.report(&err)
+				err := check.newError(DuplicateCase)
+				err.addf(e, "duplicate case %s in type switch", Ts)
+				err.addf(other, "previous case")
+				err.report()
 				continue L
 			}
 		}
@@ -350,11 +352,10 @@ L:
 // 			if T != nil {
 // 				Ts = TypeString(T, check.qualifier)
 // 			}
-// 			var err error_
-//			err.code = _DuplicateCase
-// 			err.errorf(e, "duplicate case %s in type switch", Ts)
-// 			err.errorf(other, "previous case")
-// 			check.report(&err)
+// 			err := check.newError(_DuplicateCase)
+// 			err.addf(e, "duplicate case %s in type switch", Ts)
+// 			err.addf(other, "previous case")
+// 			err.report()
 // 			continue L
 // 		}
 // 		seen[hash] = e
@@ -498,11 +499,10 @@ func (check *Checker) stmt(ctxt stmtContext, s syntax.Stmt) {
 			// with the same name as a result parameter is in scope at the place of the return."
 			for _, obj := range res.vars {
 				if alt := check.lookup(obj.name); alt != nil && alt != obj {
-					var err error_
-					err.code = OutOfScopeResult
-					err.errorf(s, "result parameter %s not in scope at return", obj.name)
-					err.errorf(alt, "inner declaration of %s", obj)
-					check.report(&err)
+					err := check.newError(OutOfScopeResult)
+					err.addf(s, "result parameter %s not in scope at return", obj.name)
+					err.addf(alt, "inner declaration of %s", obj)
+					err.report()
 					// ok to continue
 				}
 			}
@@ -743,21 +743,18 @@ func (check *Checker) typeSwitchStmt(inner stmtContext, s *syntax.SwitchStmt, gu
 	}
 
 	// check rhs
-	var x operand
-	check.expr(nil, &x, guard.X)
-	if x.mode == invalid {
-		return
-	}
-
-	// TODO(gri) we may want to permit type switches on type parameter values at some point
 	var sx *operand // switch expression against which cases are compared against; nil if invalid
-	if isTypeParam(x.typ) {
-		check.errorf(&x, InvalidTypeSwitch, "cannot use type switch on type parameter value %s", &x)
-	} else {
-		if _, ok := under(x.typ).(*Interface); ok {
-			sx = &x
-		} else {
-			check.errorf(&x, InvalidTypeSwitch, "%s is not an interface", &x)
+	{
+		var x operand
+		check.expr(nil, &x, guard.X)
+		if x.mode != invalid {
+			if isTypeParam(x.typ) {
+				check.errorf(&x, InvalidTypeSwitch, "cannot use type switch on type parameter value %s", &x)
+			} else if IsInterface(x.typ) {
+				sx = &x
+			} else {
+				check.errorf(&x, InvalidTypeSwitch, "%s is not an interface", &x)
+			}
 		}
 	}
 
@@ -786,7 +783,10 @@ func (check *Checker) typeSwitchStmt(inner stmtContext, s *syntax.SwitchStmt, gu
 			// exactly one type, the variable has that type; otherwise, the variable
 			// has the type of the expression in the TypeSwitchGuard."
 			if len(cases) != 1 || T == nil {
-				T = x.typ
+				T = Typ[Invalid]
+				if sx != nil {
+					T = sx.typ
+				}
 			}
 			obj := NewVar(lhs.Pos(), check.pkg, lhs.Value, T)
 			// TODO(mdempsky): Just use clause.Colon? Why did I even suggest
@@ -861,8 +861,8 @@ func (check *Checker) rangeStmt(inner stmtContext, s *syntax.ForStmt, rclause *s
 	var key, val Type
 	if x.mode != invalid {
 		// Ranging over a type parameter is permitted if it has a core type.
-		k, v, cause, isFunc, ok := rangeKeyVal(x.typ, func(v goVersion) bool {
-			return check.allowVersion(check.pkg, x.expr, v)
+		k, v, cause, ok := rangeKeyVal(x.typ, func(v goVersion) bool {
+			return check.allowVersion(x.expr, v)
 		})
 		switch {
 		case !ok && cause != "":
@@ -875,17 +875,6 @@ func (check *Checker) rangeStmt(inner stmtContext, s *syntax.ForStmt, rclause *s
 			check.softErrorf(sValue, InvalidIterVar, "range over %s permits only one iteration variable", &x)
 		case sExtra != nil:
 			check.softErrorf(sExtra, InvalidIterVar, "range clause permits at most two iteration variables")
-		case isFunc && ((k == nil) != (sKey == nil) || (v == nil) != (sValue == nil)):
-			var count string
-			switch {
-			case k == nil:
-				count = "no iteration variables"
-			case v == nil:
-				count = "one iteration variable"
-			default:
-				count = "two iteration variables"
-			}
-			check.softErrorf(&x, InvalidIterVar, "range over %s must have %s", &x, count)
 		}
 		key, val = k, v
 	}
@@ -931,14 +920,15 @@ func (check *Checker) rangeStmt(inner stmtContext, s *syntax.ForStmt, rclause *s
 
 			// initialize lhs iteration variable, if any
 			typ := rhs[i]
-			if typ == nil {
+			if typ == nil || typ == Typ[Invalid] {
+				// typ == Typ[Invalid] can happen if allowVersion fails.
 				obj.typ = Typ[Invalid]
 				obj.used = true // don't complain about unused variable
 				continue
 			}
 
 			if rangeOverInt {
-				assert(i == 0) // at most one iteration variable (rhs[1] == nil for rangeOverInt)
+				assert(i == 0) // at most one iteration variable (rhs[1] == nil or Typ[Invalid] for rangeOverInt)
 				check.initVar(obj, &x, "range clause")
 			} else {
 				var y operand
@@ -968,12 +958,12 @@ func (check *Checker) rangeStmt(inner stmtContext, s *syntax.ForStmt, rclause *s
 
 			// assign to lhs iteration variable, if any
 			typ := rhs[i]
-			if typ == nil {
+			if typ == nil || typ == Typ[Invalid] {
 				continue
 			}
 
 			if rangeOverInt {
-				assert(i == 0) // at most one iteration variable (rhs[1] == nil for rangeOverInt)
+				assert(i == 0) // at most one iteration variable (rhs[1] == nil or Typ[Invalid] for rangeOverInt)
 				check.assignVar(lhs, nil, &x, "range clause")
 				// If the assignment succeeded, if x was untyped before, it now
 				// has a type inferred via the assignment. It must be an integer.
@@ -1005,7 +995,7 @@ func (check *Checker) rangeStmt(inner stmtContext, s *syntax.ForStmt, rclause *s
 // RangeKeyVal returns the key and value types for a range over typ.
 // Exported for use by the compiler (does not exist in go/types).
 func RangeKeyVal(typ Type) (Type, Type) {
-	key, val, _, _, _ := rangeKeyVal(typ, nil)
+	key, val, _, _ := rangeKeyVal(typ, nil)
 	return key, val
 }
 
@@ -1014,9 +1004,9 @@ func RangeKeyVal(typ Type) (Type, Type) {
 // If allowVersion != nil, it is used to check the required language version.
 // If the range clause is not permitted, rangeKeyVal returns ok = false.
 // When ok = false, rangeKeyVal may also return a reason in cause.
-func rangeKeyVal(typ Type, allowVersion func(goVersion) bool) (key, val Type, cause string, isFunc, ok bool) {
-	bad := func(cause string) (Type, Type, string, bool, bool) {
-		return Typ[Invalid], Typ[Invalid], cause, false, false
+func rangeKeyVal(typ Type, allowVersion func(goVersion) bool) (key, val Type, cause string, ok bool) {
+	bad := func(cause string) (Type, Type, string, bool) {
+		return Typ[Invalid], Typ[Invalid], cause, false
 	}
 	toSig := func(t Type) *Signature {
 		sig, _ := coreType(t).(*Signature)
@@ -1029,29 +1019,28 @@ func rangeKeyVal(typ Type, allowVersion func(goVersion) bool) (key, val Type, ca
 		return bad("no core type")
 	case *Basic:
 		if isString(typ) {
-			return Typ[Int], universeRune, "", false, true // use 'rune' name
+			return Typ[Int], universeRune, "", true // use 'rune' name
 		}
 		if isInteger(typ) {
 			if allowVersion != nil && !allowVersion(go1_22) {
 				return bad("requires go1.22 or later")
 			}
-			return orig, nil, "", false, true
+			return orig, nil, "", true
 		}
 	case *Array:
-		return Typ[Int], typ.elem, "", false, true
+		return Typ[Int], typ.elem, "", true
 	case *Slice:
-		return Typ[Int], typ.elem, "", false, true
+		return Typ[Int], typ.elem, "", true
 	case *Map:
-		return typ.key, typ.elem, "", false, true
+		return typ.key, typ.elem, "", true
 	case *Chan:
 		if typ.dir == SendOnly {
 			return bad("receive from send-only channel")
 		}
-		return typ.elem, nil, "", false, true
+		return typ.elem, nil, "", true
 	case *Signature:
-		// TODO(gri) when this becomes enabled permanently, add version check
-		if !buildcfg.Experiment.RangeFunc {
-			break
+		if !buildcfg.Experiment.RangeFunc && allowVersion != nil && !allowVersion(go1_23) {
+			return bad("requires go1.23 or later")
 		}
 		assert(typ.Recv() == nil)
 		switch {
@@ -1076,7 +1065,7 @@ func rangeKeyVal(typ Type, allowVersion func(goVersion) bool) (key, val Type, ca
 		if cb.Params().Len() >= 2 {
 			val = cb.Params().At(1).Type()
 		}
-		return key, val, "", true, true
+		return key, val, "", true
 	}
 	return
 }

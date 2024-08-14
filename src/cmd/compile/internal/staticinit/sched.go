@@ -107,6 +107,20 @@ func (s *Schedule) tryStaticInit(n ir.Node) bool {
 	case ir.OAS:
 		n := n.(*ir.AssignStmt)
 		lhs, rhs = []ir.Node{n.X}, n.Y
+	case ir.OAS2:
+		// Usually OAS2 has been rewritten to separate OASes by types2.
+		// What's left here is "var a, b = tmp1, tmp2" as a result from rewriting
+		// "var a, b = f()" that needs type conversion, which is not static.
+		n := n.(*ir.AssignListStmt)
+		for _, rhs := range n.Rhs {
+			for rhs.Op() == ir.OCONVNOP {
+				rhs = rhs.(*ir.ConvExpr).X
+			}
+			if name, ok := rhs.(*ir.Name); !ok || !name.AutoTemp() {
+				base.FatalfAt(n.Pos(), "unexpected rhs, not an autotmp: %+v", rhs)
+			}
+		}
+		return false
 	case ir.OAS2DOTTYPE, ir.OAS2FUNC, ir.OAS2MAPR, ir.OAS2RECV:
 		n := n.(*ir.AssignListStmt)
 		if len(n.Lhs) < 2 || len(n.Rhs) != 1 {
@@ -881,7 +895,13 @@ func mayModifyPkgVar(n ir.Node) bool {
 	// safeLHS reports whether the assigned-to variable lhs is either a
 	// local variable or a global from another package.
 	safeLHS := func(lhs ir.Node) bool {
-		v, ok := ir.OuterValue(lhs).(*ir.Name)
+		outer := ir.OuterValue(lhs)
+		// "*p = ..." should be safe if p is a local variable.
+		// TODO: Should ir.OuterValue handle this?
+		for outer.Op() == ir.ODEREF {
+			outer = outer.(*ir.StarExpr).X
+		}
+		v, ok := outer.(*ir.Name)
 		return ok && v.Op() == ir.ONAME && !(v.Class == ir.PEXTERN && v.Sym().Pkg == types.LocalPkg)
 	}
 
@@ -892,6 +912,12 @@ func mayModifyPkgVar(n ir.Node) bool {
 
 		case ir.OAPPEND, ir.OCLEAR, ir.OCOPY:
 			return true // could mutate a global array
+
+		case ir.OASOP:
+			n := n.(*ir.AssignOpStmt)
+			if !safeLHS(n.X) {
+				return true
+			}
 
 		case ir.OAS:
 			n := n.(*ir.AssignStmt)

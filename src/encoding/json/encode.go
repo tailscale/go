@@ -12,18 +12,19 @@ package json
 
 import (
 	"bytes"
+	"cmp"
 	"encoding"
 	"encoding/base64"
 	"fmt"
 	"math"
 	"reflect"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
+	_ "unsafe" // for linkname
 )
 
 // Marshal returns the JSON encoding of v.
@@ -140,7 +141,7 @@ import (
 // are sorted and used as JSON object keys by applying the following rules,
 // subject to the UTF-8 coercion described for string values above:
 //   - keys of any string type are used directly
-//   - [encoding.TextMarshalers] are marshaled
+//   - keys that implement [encoding.TextMarshaler] are marshaled
 //   - integer keys are converted to strings
 //
 // Pointer values encode as the value pointed to.
@@ -591,6 +592,16 @@ func stringEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 }
 
 // isValidNumber reports whether s is a valid JSON number literal.
+//
+// isValidNumber should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - github.com/bytedance/sonic
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname isValidNumber
 func isValidNumber(s string) bool {
 	// This function implements the JSON numbers grammar.
 	// See https://tools.ietf.org/html/rfc7159#section-6
@@ -1042,28 +1053,19 @@ type field struct {
 	encoder encoderFunc
 }
 
-// byIndex sorts field by index sequence.
-type byIndex []field
-
-func (x byIndex) Len() int { return len(x) }
-
-func (x byIndex) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
-
-func (x byIndex) Less(i, j int) bool {
-	for k, xik := range x[i].index {
-		if k >= len(x[j].index) {
-			return false
-		}
-		if xik != x[j].index[k] {
-			return xik < x[j].index[k]
-		}
-	}
-	return len(x[i].index) < len(x[j].index)
-}
-
 // typeFields returns a list of fields that JSON should recognize for the given type.
 // The algorithm is breadth-first search over the set of structs to include - the top struct
 // and then any reachable anonymous structs.
+//
+// typeFields should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - github.com/bytedance/sonic
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname typeFields
 func typeFields(t reflect.Type) structFields {
 	// Anonymous fields to explore at the current level and the next.
 	current := []field{}
@@ -1181,21 +1183,23 @@ func typeFields(t reflect.Type) structFields {
 		}
 	}
 
-	sort.Slice(fields, func(i, j int) bool {
-		x := fields
+	slices.SortFunc(fields, func(a, b field) int {
 		// sort field by name, breaking ties with depth, then
 		// breaking ties with "name came from json tag", then
 		// breaking ties with index sequence.
-		if x[i].name != x[j].name {
-			return x[i].name < x[j].name
+		if c := strings.Compare(a.name, b.name); c != 0 {
+			return c
 		}
-		if len(x[i].index) != len(x[j].index) {
-			return len(x[i].index) < len(x[j].index)
+		if c := cmp.Compare(len(a.index), len(b.index)); c != 0 {
+			return c
 		}
-		if x[i].tag != x[j].tag {
-			return x[i].tag
+		if a.tag != b.tag {
+			if a.tag {
+				return -1
+			}
+			return +1
 		}
-		return byIndex(x).Less(i, j)
+		return slices.Compare(a.index, b.index)
 	})
 
 	// Delete all fields that are hidden by the Go rules for embedded fields,
@@ -1227,7 +1231,9 @@ func typeFields(t reflect.Type) structFields {
 	}
 
 	fields = out
-	sort.Sort(byIndex(fields))
+	slices.SortFunc(fields, func(i, j field) int {
+		return slices.Compare(i.index, j.index)
+	})
 
 	for i := range fields {
 		f := &fields[i]

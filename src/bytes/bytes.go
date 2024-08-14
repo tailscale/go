@@ -10,6 +10,7 @@ import (
 	"internal/bytealg"
 	"unicode"
 	"unicode/utf8"
+	_ "unsafe" // for linkname
 )
 
 // Equal reports whether a and b
@@ -132,7 +133,7 @@ func LastIndexByte(s []byte, c byte) int {
 // IndexRune interprets s as a sequence of UTF-8-encoded code points.
 // It returns the byte index of the first occurrence in s of the given rune.
 // It returns -1 if rune is not present in s.
-// If r is utf8.RuneError, it returns the first instance of any
+// If r is [utf8.RuneError], it returns the first instance of any
 // invalid UTF-8 byte sequence.
 func IndexRune(s []byte, r rune) int {
 	switch {
@@ -354,22 +355,20 @@ func genSplit(s, sep []byte, sepSave, n int) [][]byte {
 // the subslices between those separators.
 // If sep is empty, SplitN splits after each UTF-8 sequence.
 // The count determines the number of subslices to return:
+//   - n > 0: at most n subslices; the last subslice will be the unsplit remainder;
+//   - n == 0: the result is nil (zero subslices);
+//   - n < 0: all subslices.
 //
-//	n > 0: at most n subslices; the last subslice will be the unsplit remainder.
-//	n == 0: the result is nil (zero subslices)
-//	n < 0: all subslices
-//
-// To split around the first instance of a separator, see Cut.
+// To split around the first instance of a separator, see [Cut].
 func SplitN(s, sep []byte, n int) [][]byte { return genSplit(s, sep, 0, n) }
 
 // SplitAfterN slices s into subslices after each instance of sep and
 // returns a slice of those subslices.
 // If sep is empty, SplitAfterN splits after each UTF-8 sequence.
 // The count determines the number of subslices to return:
-//
-//	n > 0: at most n subslices; the last subslice will be the unsplit remainder.
-//	n == 0: the result is nil (zero subslices)
-//	n < 0: all subslices
+//   - n > 0: at most n subslices; the last subslice will be the unsplit remainder;
+//   - n == 0: the result is nil (zero subslices);
+//   - n < 0: all subslices.
 func SplitAfterN(s, sep []byte, n int) [][]byte {
 	return genSplit(s, sep, len(sep), n)
 }
@@ -379,7 +378,7 @@ func SplitAfterN(s, sep []byte, n int) [][]byte {
 // If sep is empty, Split splits after each UTF-8 sequence.
 // It is equivalent to SplitN with a count of -1.
 //
-// To split around the first instance of a separator, see Cut.
+// To split around the first instance of a separator, see [Cut].
 func Split(s, sep []byte) [][]byte { return genSplit(s, sep, 0, -1) }
 
 // SplitAfter slices s into all subslices after each instance of sep and
@@ -394,7 +393,7 @@ var asciiSpace = [256]uint8{'\t': 1, '\n': 1, '\v': 1, '\f': 1, '\r': 1, ' ': 1}
 
 // Fields interprets s as a sequence of UTF-8-encoded code points.
 // It splits the slice s around each instance of one or more consecutive white space
-// characters, as defined by unicode.IsSpace, returning a slice of subslices of s or an
+// characters, as defined by [unicode.IsSpace], returning a slice of subslices of s or an
 // empty slice if s contains only white space.
 func Fields(s []byte) [][]byte {
 	// First count the fields.
@@ -525,7 +524,7 @@ func Join(s [][]byte, sep []byte) []byte {
 		n += len(v)
 	}
 
-	b := bytealg.MakeNoZero(n)
+	b := bytealg.MakeNoZero(n)[:n:n]
 	bp := copy(b, s[0])
 	for _, v := range s[1:] {
 		bp += copy(b[bp:], sep)
@@ -568,6 +567,18 @@ func Map(mapping func(r rune) rune, s []byte) []byte {
 	return b
 }
 
+// Despite being an exported symbol,
+// Repeat is linknamed by widely used packages.
+// Notable members of the hall of shame include:
+//   - gitee.com/quant1x/num
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+// Note that this comment is not part of the doc comment.
+//
+//go:linkname Repeat
+
 // Repeat returns a new byte slice consisting of count copies of b.
 //
 // It panics if count is negative or if the result of (len(b) * count)
@@ -583,7 +594,7 @@ func Repeat(b []byte, count int) []byte {
 	if count < 0 {
 		panic("bytes: negative Repeat count")
 	}
-	if len(b) >= maxInt/count {
+	if len(b) > maxInt/count {
 		panic("bytes: Repeat output length overflow")
 	}
 	n := len(b) * count
@@ -610,7 +621,7 @@ func Repeat(b []byte, count int) []byte {
 			chunkMax = len(b)
 		}
 	}
-	nb := bytealg.MakeNoZero(n)
+	nb := bytealg.MakeNoZero(n)[:n:n]
 	bp := copy(nb, b)
 	for bp < n {
 		chunk := bp
@@ -640,7 +651,7 @@ func ToUpper(s []byte) []byte {
 			// Just return a copy.
 			return append([]byte(""), s...)
 		}
-		b := bytealg.MakeNoZero(len(s))
+		b := bytealg.MakeNoZero(len(s))[:len(s):len(s)]
 		for i := 0; i < len(s); i++ {
 			c := s[i]
 			if 'a' <= c && c <= 'z' {
@@ -670,7 +681,7 @@ func ToLower(s []byte) []byte {
 		if !hasUpper {
 			return append([]byte(""), s...)
 		}
-		b := bytealg.MakeNoZero(len(s))
+		b := bytealg.MakeNoZero(len(s))[:len(s):len(s)]
 		for i := 0; i < len(s); i++ {
 			c := s[i]
 			if 'A' <= c && c <= 'Z' {

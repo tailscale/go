@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	_ "unsafe" // for linkname
 )
 
 // TODO: This should be a distinguishable error (ErrMessageTooLarge)
@@ -501,6 +502,9 @@ func (r *Reader) ReadMIMEHeader() (MIMEHeader, error) {
 	return readMIMEHeader(r, math.MaxInt64, math.MaxInt64)
 }
 
+// readMIMEHeader is accessed from mime/multipart.
+//go:linkname readMIMEHeader
+
 // readMIMEHeader is a version of ReadMIMEHeader which takes a limit on the header size.
 // It is called by the mime/multipart package.
 func readMIMEHeader(r *Reader, maxMemory, maxHeaders int64) (MIMEHeader, error) {
@@ -553,13 +557,6 @@ func readMIMEHeader(r *Reader, maxMemory, maxHeaders int64) (MIMEHeader, error) 
 			if !validHeaderValueByte(c) {
 				return m, ProtocolError("malformed MIME header line: " + string(kv))
 			}
-		}
-
-		// As per RFC 7230 field-name is a token, tokens consist of one or more chars.
-		// We could return a ProtocolError here, but better to be liberal in what we
-		// accept, so if we get an empty key, skip it.
-		if key == "" {
-			continue
 		}
 
 		maxHeaders--
@@ -743,6 +740,10 @@ func validHeaderValueByte(c byte) bool {
 // ReadMIMEHeader accepts header keys containing spaces, but does not
 // canonicalize them.
 func canonicalMIMEHeaderKey(a []byte) (_ string, ok bool) {
+	if len(a) == 0 {
+		return "", false
+	}
+
 	// See if a looks like a header key. If not, return it unchanged.
 	noCanon := false
 	for _, c := range a {

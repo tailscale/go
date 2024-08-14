@@ -23,6 +23,32 @@ func AddLargeConst(a uint64, out []uint64) {
 	// ppc64x/power9:"MOVD\t[$]-1", "SLD\t[$]33" "ADD\tR[0-9]*"
 	// ppc64x/power8:"MOVD\t[$]-1", "SLD\t[$]33" "ADD\tR[0-9]*"
 	out[1] = a + 0xFFFFFFFE00000000
+	// ppc64x/power10:"ADD\t[$]1234567,"
+	// ppc64x/power9:"ADDIS\t[$]19,", "ADD\t[$]-10617,"
+	// ppc64x/power8:"ADDIS\t[$]19,", "ADD\t[$]-10617,"
+	out[2] = a + 1234567
+	// ppc64x/power10:"ADD\t[$]-1234567,"
+	// ppc64x/power9:"ADDIS\t[$]-19,", "ADD\t[$]10617,"
+	// ppc64x/power8:"ADDIS\t[$]-19,", "ADD\t[$]10617,"
+	out[3] = a - 1234567
+	// ppc64x/power10:"ADD\t[$]2147450879,"
+	// ppc64x/power9:"ADDIS\t[$]32767,", "ADD\t[$]32767,"
+	// ppc64x/power8:"ADDIS\t[$]32767,", "ADD\t[$]32767,"
+	out[4] = a + 0x7FFF7FFF
+	// ppc64x/power10:"ADD\t[$]-2147483647,"
+	// ppc64x/power9:"ADDIS\t[$]-32768,", "ADD\t[$]1,"
+	// ppc64x/power8:"ADDIS\t[$]-32768,", "ADD\t[$]1,"
+	out[5] = a - 2147483647
+	// ppc64x:"ADDIS\t[$]-32768,", ^"ADD\t"
+	out[6] = a - 2147483648
+	// ppc64x:"ADD\t[$]2147450880,", ^"ADDIS\t"
+	out[7] = a + 0x7FFF8000
+	// ppc64x:"ADD\t[$]-32768,", ^"ADDIS\t"
+	out[8] = a - 32768
+	// ppc64x/power10:"ADD\t[$]-32769,"
+	// ppc64x/power9:"ADDIS\t[$]-1,", "ADD\t[$]32767,"
+	// ppc64x/power8:"ADDIS\t[$]-1,", "ADD\t[$]32767,"
+	out[9] = a - 32769
 }
 
 // ----------------- //
@@ -294,14 +320,14 @@ func Pow2DivisibleSigned(n1, n2 int) (bool, bool) {
 	// amd64:"TESTQ\t[$]63",-"DIVQ",-"SHRQ"
 	// arm:"AND\t[$]63",-".*udiv",-"SRA"
 	// arm64:"TST\t[$]63",-"UDIV",-"ASR",-"AND"
-	// ppc64x:"RLDICL",-"SRAD"
+	// ppc64x:"ANDCC",-"RLDICL",-"SRAD",-"CMP"
 	a := n1%64 == 0 // signed divisible
 
 	// 386:"TESTL\t[$]63",-"DIVL",-"SHRL"
 	// amd64:"TESTQ\t[$]63",-"DIVQ",-"SHRQ"
 	// arm:"AND\t[$]63",-".*udiv",-"SRA"
 	// arm64:"TST\t[$]63",-"UDIV",-"ASR",-"AND"
-	// ppc64x:"RLDICL",-"SRAD"
+	// ppc64x:"ANDCC",-"RLDICL",-"SRAD",-"CMP"
 	b := n2%64 != 0 // signed indivisible
 
 	return a, b

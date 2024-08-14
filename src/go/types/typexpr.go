@@ -42,12 +42,33 @@ func (check *Checker) ident(x *operand, e *ast.Ident, def *TypeName, wantType bo
 			check.errorf(e, UndeclaredName, "undefined: %s", e.Name)
 		}
 		return
-	case universeAny, universeComparable:
+	case universeComparable:
+		if !check.verifyVersionf(e, go1_18, "predeclared %s", e.Name) {
+			return // avoid follow-on errors
+		}
+	}
+	// Because the representation of any depends on gotypesalias, we don't check
+	// pointer identity here.
+	if obj.Name() == "any" && obj.Parent() == Universe {
 		if !check.verifyVersionf(e, go1_18, "predeclared %s", e.Name) {
 			return // avoid follow-on errors
 		}
 	}
 	check.recordUse(e, obj)
+
+	// If we want a type but don't have one, stop right here and avoid potential problems
+	// with missing underlying types. This also gives better error messages in some cases
+	// (see go.dev/issue/65344).
+	_, gotType := obj.(*TypeName)
+	if !gotType && wantType {
+		check.errorf(e, NotAType, "%s is not a type", obj.Name())
+		// avoid "declared but not used" errors
+		// (don't use Checker.use - we don't want to evaluate too much)
+		if v, _ := obj.(*Var); v != nil && v.pkg == check.pkg /* see Checker.use1 */ {
+			v.used = true
+		}
+		return
+	}
 
 	// Type-check the object.
 	// Only call Checker.objDecl if the object doesn't have a type yet
@@ -58,7 +79,7 @@ func (check *Checker) ident(x *operand, e *ast.Ident, def *TypeName, wantType bo
 	// informative "not a type/value" error that this function's caller
 	// will issue (see go.dev/issue/25790).
 	typ := obj.Type()
-	if _, gotType := obj.(*TypeName); typ == nil || gotType && wantType {
+	if typ == nil || gotType && wantType {
 		check.objDecl(obj, def)
 		typ = obj.Type() // type must have been assigned by Checker.objDecl
 	}
@@ -95,7 +116,7 @@ func (check *Checker) ident(x *operand, e *ast.Ident, def *TypeName, wantType bo
 		x.mode = constant_
 
 	case *TypeName:
-		if !check.enableAlias && check.isBrokenAlias(obj) {
+		if !check.conf._EnableAlias && check.isBrokenAlias(obj) {
 			check.errorf(e, InvalidDeclCycle, "invalid use of type alias %s in recursive type (see go.dev/issue/50729)", obj.name)
 			return
 		}
@@ -126,7 +147,7 @@ func (check *Checker) ident(x *operand, e *ast.Ident, def *TypeName, wantType bo
 		x.mode = value
 
 	default:
-		unreachable()
+		panic("unreachable")
 	}
 
 	x.typ = typ
@@ -422,6 +443,10 @@ func (check *Checker) instantiatedType(ix *typeparams.IndexExpr, def *TypeName) 
 		}()
 	}
 
+	defer func() {
+		setDefType(def, res)
+	}()
+
 	var cause string
 	gtyp := check.genericType(ix.X, &cause)
 	if cause != "" {
@@ -431,21 +456,23 @@ func (check *Checker) instantiatedType(ix *typeparams.IndexExpr, def *TypeName) 
 		return gtyp // error already reported
 	}
 
+	// evaluate arguments
+	targs := check.typeList(ix.Indices)
+	if targs == nil {
+		return Typ[Invalid]
+	}
+
+	if orig, _ := gtyp.(*Alias); orig != nil {
+		return check.instance(ix.Pos(), orig, targs, nil, check.context())
+	}
+
 	orig := asNamed(gtyp)
 	if orig == nil {
 		panic(fmt.Sprintf("%v: cannot instantiate %v", ix.Pos(), gtyp))
 	}
 
-	// evaluate arguments
-	targs := check.typeList(ix.Indices)
-	if targs == nil {
-		setDefType(def, Typ[Invalid]) // avoid errors later due to lazy instantiation
-		return Typ[Invalid]
-	}
-
 	// create the instance
 	inst := asNamed(check.instance(ix.Pos(), orig, targs, nil, check.context()))
-	setDefType(def, inst)
 
 	// orig.tparams may not be set up, so we need to do expansion later.
 	check.later(func() {
@@ -461,7 +488,7 @@ func (check *Checker) instantiatedType(ix *typeparams.IndexExpr, def *TypeName) 
 				if i < len(ix.Indices) {
 					pos = ix.Indices[i].Pos()
 				}
-				check.softErrorf(atPos(pos), InvalidTypeArg, err.Error())
+				check.softErrorf(atPos(pos), InvalidTypeArg, "%v", err)
 			} else {
 				check.mono.recordInstance(check.pkg, ix.Pos(), inst.TypeParams().list(), inst.TypeArgs().list(), ix.Indices)
 			}

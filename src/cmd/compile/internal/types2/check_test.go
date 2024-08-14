@@ -122,10 +122,11 @@ func parseFlags(src []byte, flags *flag.FlagSet) error {
 //
 // If provided, opts may be used to mutate the Config before type-checking.
 func testFiles(t *testing.T, filenames []string, srcs [][]byte, colDelta uint, manual bool, opts ...func(*Config)) {
-	// Alias types are disabled by default
+	enableAlias := true
+	opts = append(opts, func(conf *Config) { conf.EnableAlias = enableAlias })
 	testFilesImpl(t, filenames, srcs, colDelta, manual, opts...)
 	if !manual {
-		t.Setenv("GODEBUG", "gotypesalias=1")
+		enableAlias = false
 		testFilesImpl(t, filenames, srcs, colDelta, manual, opts...)
 	}
 }
@@ -192,7 +193,7 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, colDelta uin
 
 	// By default, gotypesalias is not set.
 	if gotypesalias != "" {
-		t.Setenv("GODEBUG", "gotypesalias="+gotypesalias)
+		conf.EnableAlias = gotypesalias != "0"
 	}
 
 	// Provide Config.Info with all maps so that info recording is tested.
@@ -246,17 +247,17 @@ func testFilesImpl(t *testing.T, filenames []string, srcs [][]byte, colDelta uin
 					panic("unreachable")
 				}
 			}
-			pattern, err := strconv.Unquote(strings.TrimSpace(pattern))
+			unquoted, err := strconv.Unquote(strings.TrimSpace(pattern))
 			if err != nil {
-				t.Errorf("%s:%d:%d: %v", filename, line, want.Pos.Col(), err)
+				t.Errorf("%s:%d:%d: invalid ERROR pattern (cannot unquote %s)", filename, line, want.Pos.Col(), pattern)
 				continue
 			}
 			if substr {
-				if !strings.Contains(gotMsg, pattern) {
+				if !strings.Contains(gotMsg, unquoted) {
 					continue
 				}
 			} else {
-				rx, err := regexp.Compile(pattern)
+				rx, err := regexp.Compile(unquoted)
 				if err != nil {
 					t.Errorf("%s:%d:%d: %v", filename, line, want.Pos.Col(), err)
 					continue
@@ -398,7 +399,7 @@ func TestCheck(t *testing.T) {
 	DefPredeclaredTestFuncs()
 	testDirFiles(t, "../../../../internal/types/testdata/check", 50, false) // TODO(gri) narrow column tolerance
 }
-func TestSpec(t *testing.T) { testDirFiles(t, "../../../../internal/types/testdata/spec", 0, false) }
+func TestSpec(t *testing.T) { testDirFiles(t, "../../../../internal/types/testdata/spec", 20, false) } // TODO(gri) narrow column tolerance
 func TestExamples(t *testing.T) {
 	testDirFiles(t, "../../../../internal/types/testdata/examples", 125, false)
 } // TODO(gri) narrow column tolerance

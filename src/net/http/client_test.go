@@ -946,7 +946,7 @@ func testResponseSetsTLSConnectionState(t *testing.T, mode testMode) {
 
 	c := ts.Client()
 	tr := c.Transport.(*Transport)
-	tr.TLSClientConfig.CipherSuites = []uint16{tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA}
+	tr.TLSClientConfig.CipherSuites = []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}
 	tr.TLSClientConfig.MaxVersion = tls.VersionTLS12 // to get to pick the cipher suite
 	tr.Dial = func(netw, addr string) (net.Conn, error) {
 		return net.Dial(netw, ts.Listener.Addr().String())
@@ -959,7 +959,7 @@ func testResponseSetsTLSConnectionState(t *testing.T, mode testMode) {
 	if res.TLS == nil {
 		t.Fatal("Response didn't set TLS Connection State.")
 	}
-	if got, want := res.TLS.CipherSuite, tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA; got != want {
+	if got, want := res.TLS.CipherSuite, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256; got != want {
 		t.Errorf("TLS Cipher Suite = %d; want %d", got, want)
 	}
 }
@@ -1249,6 +1249,9 @@ func testClientTimeout(t *testing.T, mode testMode) {
 		} else if !ne.Timeout() {
 			t.Errorf("net.Error.Timeout = false; want true")
 		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("ReadAll error = %q; expected some context.DeadlineExceeded", err)
+		}
 		if got := ne.Error(); !strings.Contains(got, "(Client.Timeout") {
 			if runtime.GOOS == "windows" && strings.HasPrefix(runtime.GOARCH, "arm") {
 				testenv.SkipFlaky(t, 43120)
@@ -1291,6 +1294,9 @@ func testClientTimeout_Headers(t *testing.T, mode testMode) {
 	}
 	if !ne.Timeout() {
 		t.Error("net.Error.Timeout = false; want true")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("ReadAll error = %q; expected some context.DeadlineExceeded", err)
 	}
 	if got := ne.Error(); !strings.Contains(got, "Client.Timeout exceeded") {
 		if runtime.GOOS == "windows" && strings.HasPrefix(runtime.GOARCH, "arm") {
@@ -1932,21 +1938,25 @@ func TestClientCloseIdleConnections(t *testing.T) {
 	}
 }
 
+type testRoundTripper func(*Request) (*Response, error)
+
+func (t testRoundTripper) RoundTrip(req *Request) (*Response, error) {
+	return t(req)
+}
+
 func TestClientPropagatesTimeoutToContext(t *testing.T) {
-	errDial := errors.New("not actually dialing")
 	c := &Client{
 		Timeout: 5 * time.Second,
-		Transport: &Transport{
-			DialContext: func(ctx context.Context, netw, addr string) (net.Conn, error) {
-				deadline, ok := ctx.Deadline()
-				if !ok {
-					t.Error("no deadline")
-				} else {
-					t.Logf("deadline in %v", deadline.Sub(time.Now()).Round(time.Second/10))
-				}
-				return nil, errDial
-			},
-		},
+		Transport: testRoundTripper(func(req *Request) (*Response, error) {
+			ctx := req.Context()
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Error("no deadline")
+			} else {
+				t.Logf("deadline in %v", deadline.Sub(time.Now()).Round(time.Second/10))
+			}
+			return nil, errors.New("not actually making a request")
+		}),
 	}
 	c.Get("https://example.tld/")
 }
@@ -1992,6 +2002,9 @@ func testClientDoCanceledVsTimeout(t *testing.T, mode testMode) {
 			}
 			if g, w := ue.Err, wantErr; g != w {
 				t.Errorf("url.Error.Err = %v; want %v", g, w)
+			}
+			if got := errors.Is(err, context.DeadlineExceeded); got != wantIsTimeout {
+				t.Errorf("errors.Is(err, context.DeadlineExceeded) = %v, want %v", got, wantIsTimeout)
 			}
 		})
 	}

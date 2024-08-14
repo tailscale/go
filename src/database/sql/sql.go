@@ -24,17 +24,27 @@ import (
 	"math/rand/v2"
 	"reflect"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+	_ "unsafe"
 )
 
-var (
-	driversMu sync.RWMutex
-	drivers   = make(map[string]driver.Driver)
-)
+var driversMu sync.RWMutex
+
+// drivers should be an internal detail,
+// but widely used packages access it using linkname.
+// (It is extra wrong that they linkname drivers but not driversMu.)
+// Notable members of the hall of shame include:
+//   - github.com/instana/go-sensor
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname drivers
+var drivers = make(map[string]driver.Driver)
 
 // nowFunc returns the current time; it's overridden in tests.
 var nowFunc = time.Now
@@ -69,7 +79,7 @@ func Drivers() []string {
 	for name := range drivers {
 		list = append(list, name)
 	}
-	sort.Strings(list)
+	slices.Sort(list)
 	return list
 }
 
@@ -551,9 +561,9 @@ type driverConn struct {
 
 	// guarded by db.mu
 	inUse      bool
+	dbmuClosed bool      // same as closed, but guarded by db.mu, for removeClosedStmtLocked
 	returnedAt time.Time // Time the connection was created or returned.
 	onPut      []func()  // code (with db.mu held) run when conn is next returned
-	dbmuClosed bool      // same as closed, but guarded by db.mu, for removeClosedStmtLocked
 }
 
 func (dc *driverConn) releaseConn(err error) {
@@ -2923,12 +2933,8 @@ type Rows struct {
 	//
 	// closemu guards lasterr and closed.
 	closemu sync.RWMutex
-	closed  bool
 	lasterr error // non-nil only if closed is true
-
-	// lastcols is only used in Scan, Next, and NextResultSet which are expected
-	// not to be called concurrently.
-	lastcols []driver.Value
+	closed  bool
 
 	// closemuScanHold is whether the previous call to Scan kept closemu RLock'ed
 	// without unlocking it. It does that when the user passes a *RawBytes scan
@@ -2944,6 +2950,17 @@ type Rows struct {
 	// returning. It's only used by Next and Err which are
 	// expected not to be called concurrently.
 	hitEOF bool
+
+	// lastcols is only used in Scan, Next, and NextResultSet which are expected
+	// not to be called concurrently.
+	lastcols []driver.Value
+
+	// raw is a buffer for RawBytes that persists between Scan calls.
+	// This is used when the driver returns a mismatched type that requires
+	// a cloning allocation. For example, if the driver returns a *string and
+	// the user is scanning into a *RawBytes, we need to copy the string.
+	// The raw buffer here lets us reuse the memory for that copy across Scan calls.
+	raw []byte
 }
 
 // lasterrOrErrLocked returns either lasterr or the provided err.
@@ -3122,6 +3139,32 @@ func (rs *Rows) Err() error {
 	rs.closemu.RLock()
 	defer rs.closemu.RUnlock()
 	return rs.lasterrOrErrLocked(nil)
+}
+
+// rawbuf returns the buffer to append RawBytes values to.
+// This buffer is reused across calls to Rows.Scan.
+//
+// Usage:
+//
+//	rawBytes = rows.setrawbuf(append(rows.rawbuf(), value...))
+func (rs *Rows) rawbuf() []byte {
+	if rs == nil {
+		// convertAssignRows can take a nil *Rows; for simplicity handle it here
+		return nil
+	}
+	return rs.raw
+}
+
+// setrawbuf updates the RawBytes buffer with the result of appending a new value to it.
+// It returns the new value.
+func (rs *Rows) setrawbuf(b []byte) RawBytes {
+	if rs == nil {
+		// convertAssignRows can take a nil *Rows; for simplicity handle it here
+		return RawBytes(b)
+	}
+	off := len(rs.raw)
+	rs.raw = b
+	return RawBytes(rs.raw[off:])
 }
 
 var errRowsClosed = errors.New("sql: Rows are closed")
@@ -3331,6 +3374,7 @@ func (rs *Rows) Scan(dest ...any) error {
 
 	if scanArgsContainRawBytes(dest) {
 		rs.closemuScanHold = true
+		rs.raw = rs.raw[:0]
 	} else {
 		rs.closemu.RUnlock()
 	}
@@ -3452,10 +3496,8 @@ func (r *Row) Scan(dest ...any) error {
 	// they were obtained from the network anyway) But for now we
 	// don't care.
 	defer r.rows.Close()
-	for _, dp := range dest {
-		if _, ok := dp.(*RawBytes); ok {
-			return errors.New("sql: RawBytes isn't allowed on Row.Scan")
-		}
+	if scanArgsContainRawBytes(dest) {
+		return errors.New("sql: RawBytes isn't allowed on Row.Scan")
 	}
 
 	if !r.rows.Next() {

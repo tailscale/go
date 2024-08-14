@@ -27,6 +27,7 @@
 //	mod         module maintenance
 //	work        workspace maintenance
 //	run         compile and run Go program
+//	telemetry   manage telemetry data and settings
 //	test        test packages
 //	tool        run specified go tool
 //	version     print Go version
@@ -275,7 +276,7 @@
 //
 // Usage:
 //
-//	go clean [clean flags] [build flags] [packages]
+//	go clean [-i] [-r] [-cache] [-testcache] [-modcache] [-fuzzcache] [build flags] [packages]
 //
 // Clean removes object files from package source directories.
 // The go command builds most objects in a temporary directory,
@@ -456,7 +457,7 @@
 //
 // Usage:
 //
-//	go env [-json] [-u] [-w] [var ...]
+//	go env [-json] [-changed] [-u] [-w] [var ...]
 //
 // Env prints Go environment information.
 //
@@ -475,6 +476,10 @@
 // The -w flag requires one or more arguments of the
 // form NAME=VALUE and changes the default settings
 // of the named environment variables to the given values.
+//
+// The -changed flag prints only those settings whose effective
+// value differs from the default value that would be obtained in
+// an empty environment with no prior uses of the -w flag.
 //
 // For more about environment variables, see 'go help environment'.
 //
@@ -715,6 +720,8 @@
 // The -x flag prints commands as they are executed. This is useful for
 // debugging version control commands when a module is downloaded directly
 // from a repository.
+//
+// For more about build flags, see 'go help build'.
 //
 // For more about modules, see https://golang.org/ref/mod.
 //
@@ -1004,6 +1011,8 @@
 //	    Retracted  []string      // retraction information, if any (with -retracted or -u)
 //	    Deprecated string        // deprecation message, if any (with -u)
 //	    Error      *ModuleError  // error loading module
+//	    Sum        string        // checksum for path, version (as in go.sum)
+//	    GoModSum   string        // checksum for go.mod (as in go.sum)
 //	    Origin     any           // provenance of module
 //	    Reuse      bool          // reuse of old module info is safe
 //	}
@@ -1199,6 +1208,12 @@
 //
 // The -module flag changes the module's path (the go.mod file's module line).
 //
+// The -godebug=key=value flag adds a godebug key=value line,
+// replacing any existing godebug lines with the given key.
+//
+// The -dropgodebug=key flag drops any existing godebug lines
+// with the given key.
+//
 // The -require=path@version and -droprequire=path flags
 // add and drop a requirement on the given module path and version.
 // Note that -require overrides any existing requirements on path.
@@ -1206,6 +1221,14 @@
 // Users should prefer 'go get path@version' or 'go get path@none',
 // which make other go.mod adjustments as needed to satisfy
 // constraints imposed by other modules.
+//
+// The -go=version flag sets the expected Go language version.
+// This flag is mainly for tools that understand Go version dependencies.
+// Users should prefer 'go get go@version'.
+//
+// The -toolchain=version flag sets the Go toolchain to use.
+// This flag is mainly for tools that understand Go version dependencies.
+// Users should prefer 'go get toolchain@version'.
 //
 // The -exclude=path@version and -dropexclude=path@version flags
 // add and drop an exclusion for the given module path and version.
@@ -1228,13 +1251,9 @@
 // like "v1.2.3" or a closed interval like "[v1.1.0,v1.1.9]". Note that
 // -retract=version is a no-op if that retraction already exists.
 //
-// The -require, -droprequire, -exclude, -dropexclude, -replace,
-// -dropreplace, -retract, and -dropretract editing flags may be repeated,
-// and the changes are applied in the order given.
-//
-// The -go=version flag sets the expected Go language version.
-//
-// The -toolchain=name flag sets the Go toolchain to use.
+// The -godebug, -dropgodebug, -require, -droprequire, -exclude, -dropexclude,
+// -replace, -dropreplace, -retract, and -dropretract editing flags may be
+// repeated, and the changes are applied in the order given.
 //
 // The -print flag prints the final go.mod in its text format instead of
 // writing it back to go.mod.
@@ -1251,6 +1270,7 @@
 //		Module    ModPath
 //		Go        string
 //		Toolchain string
+//		Godebug   []Godebug
 //		Require   []Require
 //		Exclude   []Module
 //		Replace   []Replace
@@ -1262,9 +1282,14 @@
 //		Deprecated string
 //	}
 //
+//	type Godebug struct {
+//		Key   string
+//		Value string
+//	}
+//
 //	type Require struct {
-//		Path string
-//		Version string
+//		Path     string
+//		Version  string
 //		Indirect bool
 //	}
 //
@@ -1330,7 +1355,7 @@
 //
 // Usage:
 //
-//	go mod tidy [-e] [-v] [-x] [-go=version] [-compat=version]
+//	go mod tidy [-e] [-v] [-x] [-diff] [-go=version] [-compat=version]
 //
 // Tidy makes sure go.mod matches the source code in the module.
 // It adds any missing modules necessary to build the current module's
@@ -1343,6 +1368,10 @@
 //
 // The -e flag causes tidy to attempt to proceed despite errors
 // encountered while loading packages.
+//
+// The -diff flag causes tidy not to modify go.mod or go.sum but
+// instead print the necessary changes as a unified diff. It exits
+// with a non-zero code if the diff is not empty.
 //
 // The -go flag causes tidy to update the 'go' directive in the go.mod
 // file to the given version, which may change which module dependencies
@@ -1528,6 +1557,12 @@
 // rewrite the go.mod file. The only time this flag is needed is if no other
 // flags are specified, as in 'go work edit -fmt'.
 //
+// The -godebug=key=value flag adds a godebug key=value line,
+// replacing any existing godebug lines with the given key.
+//
+// The -dropgodebug=key flag drops any existing godebug lines
+// with the given key.
+//
 // The -use=path and -dropuse=path flags
 // add and drop a use directive from the go.work file's set of module directories.
 //
@@ -1559,8 +1594,14 @@
 //	type GoWork struct {
 //		Go        string
 //		Toolchain string
+//		Godebug   []Godebug
 //		Use       []Use
 //		Replace   []Replace
+//	}
+//
+//	type Godebug struct {
+//		Key   string
+//		Value string
 //	}
 //
 //	type Use struct {
@@ -1648,8 +1689,7 @@
 //
 // The -r flag searches recursively for modules in the argument
 // directories, and the use command operates as if each of the directories
-// were specified as arguments: namely, use directives will be added for
-// directories that exist, and removed for directories that do not exist.
+// were specified as arguments.
 //
 // See the workspaces reference at https://go.dev/ref/mod#workspaces
 // for more information.
@@ -1719,6 +1759,38 @@
 // For more about specifying packages, see 'go help packages'.
 //
 // See also: go build.
+//
+// # Manage telemetry data and settings
+//
+// Usage:
+//
+//	go telemetry [off|local|on]
+//
+// Telemetry is used to manage Go telemetry data and settings.
+//
+// Telemetry can be in one of three modes: off, local, or on.
+//
+// When telemetry is in local mode, counter data is written to the local file
+// system, but will not be uploaded to remote servers.
+//
+// When telemetry is off, local counter data is neither collected nor uploaded.
+//
+// When telemetry is on, telemetry data is written to the local file system
+// and periodically sent to https://telemetry.go.dev/. Uploaded data is used to
+// help improve the Go toolchain and related tools, and it will be published as
+// part of a public dataset.
+//
+// For more details, see https://telemetry.go.dev/privacy.
+// This data is collected in accordance with the Google Privacy Policy
+// (https://policies.google.com/privacy).
+//
+// To view the current telemetry mode, run "go telemetry".
+// To disable telemetry uploading, but keep local data collection, run
+// "go telemetry local".
+// To enable both collection and uploading, run “go telemetry on”.
+// To disable both collection and uploading, run "go telemetry off".
+//
+// See https://go.dev/doc/telemetry for more information on telemetry.
 //
 // # Test packages
 //
@@ -1802,7 +1874,7 @@
 // The rule for a match in the cache is that the run involves the same
 // test binary and the flags on the command line come entirely from a
 // restricted set of 'cacheable' test flags, defined as -benchtime, -cpu,
-// -list, -parallel, -run, -short, -timeout, -failfast, and -v.
+// -list, -parallel, -run, -short, -timeout, -failfast, -fullpath and -v.
 // If a run of go test has any test or non-test flags outside this set,
 // the result is not cached. To disable test caching, use any test flag
 // or argument other than the cacheable flags. The idiomatic way to disable
@@ -1921,6 +1993,9 @@
 //
 //	//go:build
 //
+// Build constraints can also be used to downgrade the language version
+// used to compile a file.
+//
 // Constraints may appear in any kind of source file (not just Go), but
 // they must appear near the top of the file, preceded
 // only by blank lines and other comments. These rules mean that in Go
@@ -1988,6 +2063,8 @@
 //     correspond to the amd64.v1, amd64.v2, and amd64.v3 feature build tags.
 //   - For GOARCH=arm, GOARM=5, 6, and 7
 //     correspond to the arm.5, arm.6, and arm.7 feature build tags.
+//   - For GOARCH=arm64, GOARM64=v8.{0-9} and v9.{0-5}
+//     correspond to the arm64.v8.{0-9} and arm64.v9.{0-5} feature build tags.
 //   - For GOARCH=mips or mipsle,
 //     GOMIPS=hardfloat and softfloat
 //     correspond to the mips.hardfloat and mips.softfloat
@@ -2001,10 +2078,13 @@
 //     ppc64.power8, ppc64.power9, and ppc64.power10
 //     (or ppc64le.power8, ppc64le.power9, and ppc64le.power10)
 //     feature build tags.
+//   - For GOARCH=riscv64,
+//     GORISCV64=rva20u64 and rva22u64 correspond to the riscv64.rva20u64
+//     and riscv64.rva22u64 build tags.
 //   - For GOARCH=wasm, GOWASM=satconv and signext
 //     correspond to the wasm.satconv and wasm.signext feature build tags.
 //
-// For GOARCH=amd64, arm, ppc64, and ppc64le, a particular feature level
+// For GOARCH=amd64, arm, ppc64, ppc64le, and riscv64, a particular feature level
 // sets the feature build tags for all previous levels as well.
 // For example, GOAMD64=v2 sets the amd64.v1 and amd64.v2 feature flags.
 // This ensures that code making use of v2 features continues to compile
@@ -2037,6 +2117,10 @@
 // Go versions 1.16 and earlier used a different syntax for build constraints,
 // with a "// +build" prefix. The gofmt command will add an equivalent //go:build
 // constraint when encountering the older syntax.
+//
+// In modules with a Go version of 1.21 or later, if a file's build constraint
+// has a term for a Go major release, the language version used when compiling
+// the file will be the minimum version implied by the build constraint.
 //
 // # Build modes
 //
@@ -2284,6 +2368,13 @@
 //		Valid values are 5, 6, 7.
 //		The value can be followed by an option specifying how to implement floating point instructions.
 //		Valid options are ,softfloat (default for 5) and ,hardfloat (default for 6 and 7).
+//	GOARM64
+//		For GOARCH=arm64, the ARM64 architecture for which to compile.
+//		Valid values are v8.0 (default), v8.{1-9}, v9.{0-5}.
+//		The value can be followed by an option specifying extensions implemented by target hardware.
+//		Valid options are ,lse and ,crypto.
+//		Note that some extensions are enabled by default starting from a certain GOARM64 version;
+//		for example, lse is enabled by default starting from v8.1.
 //	GO386
 //		For GOARCH=386, how to implement floating point instructions.
 //		Valid values are sse2 (default), softfloat.
@@ -2300,6 +2391,10 @@
 //	GOPPC64
 //		For GOARCH=ppc64{,le}, the target ISA (Instruction Set Architecture).
 //		Valid values are power8 (default), power9, power10.
+//	GORISCV64
+//		For GOARCH=riscv64, the RISC-V user-mode application profile for which
+//		to compile. Valid values are rva20u64 (default), rva22u64.
+//		See https://github.com/riscv/riscv-profiles/blob/main/src/profiles.adoc
 //	GOWASM
 //		For GOARCH=wasm, comma-separated list of experimental WebAssembly features to use.
 //		Valid values are satconv, signext.
@@ -2322,11 +2417,6 @@
 //		See src/internal/goexperiment/flags.go for currently valid values.
 //		Warning: This variable is provided for the development and testing
 //		of the Go toolchain itself. Use beyond that purpose is unsupported.
-//	GOROOT_FINAL
-//		The root of the installed Go tree, when it is
-//		installed in a location other than where it is built.
-//		File names in stack traces are rewritten from GOROOT to
-//		GOROOT_FINAL.
 //	GO_EXTLINK_ENABLED
 //		Whether the linker should use external linking mode
 //		when using -linkmode=auto with code that uses cgo.
@@ -3103,6 +3193,7 @@
 //
 //	-benchmem
 //	    Print memory allocation statistics for benchmarks.
+//	    Allocations made in C or using C.malloc are not counted.
 //
 //	-blockprofile block.out
 //	    Write a goroutine blocking profile to the specified file

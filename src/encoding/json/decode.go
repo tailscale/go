@@ -17,6 +17,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
+	_ "unsafe" // for linkname
 )
 
 // Unmarshal parses the JSON-encoded data and stores the result
@@ -72,8 +73,7 @@ import (
 // use. If the map is nil, Unmarshal allocates a new map. Otherwise Unmarshal
 // reuses the existing map, keeping existing entries. Unmarshal then stores
 // key-value pairs from the JSON object into the map. The map's key type must
-// either be any string type, an integer, implement [json.Unmarshaler], or
-// implement [encoding.TextUnmarshaler].
+// either be any string type, an integer, or implement [encoding.TextUnmarshaler].
 //
 // If the JSON-encoded data contain a syntax error, Unmarshal returns a [SyntaxError].
 //
@@ -776,7 +776,7 @@ func (d *decodeState) object(v reflect.Value) error {
 				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 					s := string(key)
 					n, err := strconv.ParseInt(s, 10, 64)
-					if err != nil || reflect.Zero(kt).OverflowInt(n) {
+					if err != nil || kt.OverflowInt(n) {
 						d.saveError(&UnmarshalTypeError{Value: "number " + s, Type: kt, Offset: int64(start + 1)})
 						break
 					}
@@ -785,7 +785,7 @@ func (d *decodeState) object(v reflect.Value) error {
 				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 					s := string(key)
 					n, err := strconv.ParseUint(s, 10, 64)
-					if err != nil || reflect.Zero(kt).OverflowUint(n) {
+					if err != nil || kt.OverflowUint(n) {
 						d.saveError(&UnmarshalTypeError{Value: "number " + s, Type: kt, Offset: int64(start + 1)})
 						break
 					}
@@ -943,10 +943,11 @@ func (d *decodeState) literalStore(item []byte, v reflect.Value, fromQuoted bool
 			}
 			v.SetBytes(b[:n])
 		case reflect.String:
-			if v.Type() == numberType && !isValidNumber(string(s)) {
+			t := string(s)
+			if v.Type() == numberType && !isValidNumber(t) {
 				return fmt.Errorf("json: invalid number literal, trying to unmarshal %q into Number", item)
 			}
-			v.SetString(string(s))
+			v.SetString(t)
 		case reflect.Interface:
 			if v.NumMethod() == 0 {
 				v.Set(reflect.ValueOf(string(s)))
@@ -1177,6 +1178,15 @@ func unquote(s []byte) (t string, ok bool) {
 	return
 }
 
+// unquoteBytes should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - github.com/bytedance/sonic
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname unquoteBytes
 func unquoteBytes(s []byte) (t []byte, ok bool) {
 	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
 		return

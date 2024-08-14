@@ -44,6 +44,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"cmd/internal/telemetry/counter"
 )
 
 func usage() {
@@ -67,8 +69,11 @@ var (
 func main() {
 	log.SetPrefix("distpack: ")
 	log.SetFlags(0)
+	counter.Open()
 	flag.Usage = usage
 	flag.Parse()
+	counter.Inc("distpack/invocations")
+	counter.CountFlags("distpack/flag:", *flag.CommandLine)
 	if flag.NArg() != 0 {
 		usage()
 	}

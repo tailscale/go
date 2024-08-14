@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	_ "unsafe" // for linkname
 
 	"golang.org/x/net/http/httpguts"
 	"golang.org/x/net/idna"
@@ -320,6 +321,10 @@ type Request struct {
 	// redirects.
 	Response *Response
 
+	// Pattern is the [ServeMux] pattern that matched the request.
+	// It is empty if the request was not matched against a pattern.
+	Pattern string
+
 	// ctx is either the client or server context. It should only
 	// be modified via copying the whole Request using Clone or WithContext.
 	// It is unexported to prevent people from using Context wrong
@@ -371,6 +376,8 @@ func (r *Request) WithContext(ctx context.Context) *Request {
 
 // Clone returns a deep copy of r with its context changed to ctx.
 // The provided ctx must be non-nil.
+//
+// Clone only makes a shallow copy of the Body field.
 //
 // For an outgoing client request, the context controls the entire
 // lifetime of a request and its response: obtaining a connection,
@@ -431,6 +438,15 @@ func (r *Request) Cookies() []*Cookie {
 	return readCookies(r.Header, "")
 }
 
+// CookiesNamed parses and returns the named HTTP cookies sent with the request
+// or an empty slice if none matched.
+func (r *Request) CookiesNamed(name string) []*Cookie {
+	if name == "" {
+		return []*Cookie{}
+	}
+	return readCookies(r.Header, name)
+}
+
 // ErrNoCookie is returned by Request's Cookie method when a cookie is not found.
 var ErrNoCookie = errors.New("http: named cookie not present")
 
@@ -455,7 +471,7 @@ func (r *Request) Cookie(name string) (*Cookie, error) {
 // AddCookie only sanitizes c's name and value, and does not sanitize
 // a Cookie header already present in the request.
 func (r *Request) AddCookie(c *Cookie) {
-	s := fmt.Sprintf("%s=%s", sanitizeCookieName(c.Name), sanitizeCookieValue(c.Value))
+	s := fmt.Sprintf("%s=%s", sanitizeCookieName(c.Name), sanitizeCookieValue(c.Value, c.Quoted))
 	if c := r.Header.Get("Cookie"); c != "" {
 		r.Header.Set("Cookie", c+"; "+s)
 	} else {
@@ -973,6 +989,16 @@ func (r *Request) BasicAuth() (username, password string, ok bool) {
 
 // parseBasicAuth parses an HTTP Basic Authentication string.
 // "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==" returns ("Aladdin", "open sesame", true).
+//
+// parseBasicAuth should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - github.com/sagernet/sing
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname parseBasicAuth
 func parseBasicAuth(auth string) (username, password string, ok bool) {
 	const prefix = "Basic "
 	// Case insensitive prefix match. See Issue 22736.
@@ -1048,6 +1074,17 @@ func ReadRequest(b *bufio.Reader) (*Request, error) {
 	return req, err
 }
 
+// readRequest should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - github.com/sagernet/sing
+//   - github.com/v2fly/v2ray-core/v4
+//   - github.com/v2fly/v2ray-core/v5
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname readRequest
 func readRequest(b *bufio.Reader) (req *Request, err error) {
 	tp := newTextprotoReader(b)
 	defer putTextprotoReader(tp)

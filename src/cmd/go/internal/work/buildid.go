@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"cmd/go/internal/base"
 	"cmd/go/internal/cache"
@@ -18,6 +19,7 @@ import (
 	"cmd/go/internal/str"
 	"cmd/internal/buildid"
 	"cmd/internal/quoted"
+	"cmd/internal/telemetry/counter"
 )
 
 // Build IDs
@@ -403,6 +405,14 @@ func (b *Builder) fileHash(file string) string {
 	return buildid.HashToString(sum)
 }
 
+var (
+	counterCacheHit  = counter.New("go/buildcache/hit")
+	counterCacheMiss = counter.New("go/buildcache/miss")
+
+	onceIncStdlibRecompiled sync.Once
+	stdlibRecompiled        = counter.New("go/buildcache/stdlib-recompiled")
+)
+
 // useCache tries to satisfy the action a, which has action ID actionHash,
 // by using a cached result from an earlier build. At the moment, the only
 // cached result is the installed package or binary at target.
@@ -416,7 +426,7 @@ func (b *Builder) fileHash(file string) string {
 // during a's work. The caller should defer b.flushOutput(a), to make sure
 // that flushOutput is eventually called regardless of whether the action
 // succeeds. The flushOutput call must happen after updateBuildID.
-func (b *Builder) useCache(a *Action, actionHash cache.ActionID, target string, printOutput bool) bool {
+func (b *Builder) useCache(a *Action, actionHash cache.ActionID, target string, printOutput bool) (ok bool) {
 	// The second half of the build ID here is a placeholder for the content hash.
 	// It's important that the overall buildID be unlikely verging on impossible
 	// to appear in the output by chance, but that should be taken care of by
@@ -447,6 +457,20 @@ func (b *Builder) useCache(a *Action, actionHash cache.ActionID, target string, 
 		a.output = []byte{}
 		return false
 	}
+
+	defer func() {
+		// Increment counters for cache hits and misses based on the return value
+		// of this function. Don't increment counters if we return early because of
+		// cfg.BuildA above because we don't even look at the cache in that case.
+		if ok {
+			counterCacheHit.Inc()
+		} else {
+			if a.Package != nil && a.Package.Standard {
+				onceIncStdlibRecompiled.Do(stdlibRecompiled.Inc)
+			}
+			counterCacheMiss.Inc()
+		}
+	}()
 
 	c := cache.Default()
 
@@ -527,6 +551,14 @@ func (b *Builder) useCache(a *Action, actionHash cache.ActionID, target string, 
 
 	// Check to see if the action output is cached.
 	if file, _, err := cache.GetFile(c, actionHash); err == nil {
+		if a.Mode == "preprocess PGO profile" {
+			// Preprocessed PGO profiles don't embed a build ID, so
+			// skip the build ID lookup.
+			// TODO(prattmic): better would be to add a build ID to the format.
+			a.built = file
+			a.Target = "DO NOT USE - using cache"
+			return true
+		}
 		if buildID, err := buildid.ReadFile(file); err == nil {
 			if printOutput {
 				showStdout(b, c, a, "stdout")

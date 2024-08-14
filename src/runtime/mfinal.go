@@ -9,8 +9,7 @@ package runtime
 import (
 	"internal/abi"
 	"internal/goarch"
-	"internal/goexperiment"
-	"runtime/internal/atomic"
+	"internal/runtime/atomic"
 	"runtime/internal/sys"
 	"unsafe"
 )
@@ -235,11 +234,11 @@ func runfinq() {
 					// confusing the write barrier.
 					*(*[2]uintptr)(frame) = [2]uintptr{}
 				}
-				switch f.fint.Kind_ & kindMask {
-				case kindPtr:
+				switch f.fint.Kind_ & abi.KindMask {
+				case abi.Pointer:
 					// direct use of pointer
 					*(*unsafe.Pointer)(r) = f.arg
-				case kindInterface:
+				case abi.Interface:
 					ityp := (*interfacetype)(unsafe.Pointer(f.fint))
 					// set up with empty interface
 					(*eface)(r)._type = &f.ot.Type
@@ -378,9 +377,11 @@ func blockUntilEmptyFinalizerQueue(timeout int64) bool {
 // In order to use finalizers correctly, the program must ensure that
 // the object is reachable until it is no longer required.
 // Objects stored in global variables, or that can be found by tracing
-// pointers from a global variable, are reachable. For other objects,
-// pass the object to a call of the [KeepAlive] function to mark the
-// last point in the function where the object must be reachable.
+// pointers from a global variable, are reachable. A function argument or
+// receiver may become unreachable at the last point where the function
+// mentions it. To make an unreachable object reachable, pass the object
+// to a call of the [KeepAlive] function to mark the last point in the
+// function where the object must be reachable.
 //
 // For example, if p points to a struct, such as os.File, that contains
 // a file descriptor d, and p has a finalizer that closes that file
@@ -418,7 +419,7 @@ func SetFinalizer(obj any, finalizer any) {
 	if etyp == nil {
 		throw("runtime.SetFinalizer: first argument is nil")
 	}
-	if etyp.Kind_&kindMask != kindPtr {
+	if etyp.Kind_&abi.KindMask != abi.Pointer {
 		throw("runtime.SetFinalizer: first argument is " + toRType(etyp).string() + ", not pointer")
 	}
 	ot := (*ptrtype)(unsafe.Pointer(etyp))
@@ -442,14 +443,14 @@ func SetFinalizer(obj any, finalizer any) {
 	}
 
 	// Move base forward if we've got an allocation header.
-	if goexperiment.AllocHeaders && !span.spanclass.noscan() && !heapBitsInSpan(span.elemsize) && span.spanclass.sizeclass() != 0 {
+	if !span.spanclass.noscan() && !heapBitsInSpan(span.elemsize) && span.spanclass.sizeclass() != 0 {
 		base += mallocHeaderSize
 	}
 
 	if uintptr(e.data) != base {
 		// As an implementation detail we allow to set finalizers for an inner byte
 		// of an object if it could come from tiny alloc (see mallocgc for details).
-		if ot.Elem == nil || ot.Elem.PtrBytes != 0 || ot.Elem.Size_ >= maxTinySize {
+		if ot.Elem == nil || ot.Elem.Pointers() || ot.Elem.Size_ >= maxTinySize {
 			throw("runtime.SetFinalizer: pointer not at beginning of allocated block")
 		}
 	}
@@ -464,7 +465,7 @@ func SetFinalizer(obj any, finalizer any) {
 		return
 	}
 
-	if ftyp.Kind_&kindMask != kindFunc {
+	if ftyp.Kind_&abi.KindMask != abi.Func {
 		throw("runtime.SetFinalizer: second argument is " + toRType(ftyp).string() + ", not a function")
 	}
 	ft := (*functype)(unsafe.Pointer(ftyp))
@@ -479,13 +480,13 @@ func SetFinalizer(obj any, finalizer any) {
 	case fint == etyp:
 		// ok - same type
 		goto okarg
-	case fint.Kind_&kindMask == kindPtr:
+	case fint.Kind_&abi.KindMask == abi.Pointer:
 		if (fint.Uncommon() == nil || etyp.Uncommon() == nil) && (*ptrtype)(unsafe.Pointer(fint)).Elem == ot.Elem {
 			// ok - not same type, but both pointers,
 			// one or the other is unnamed, and same element type, so assignable.
 			goto okarg
 		}
-	case fint.Kind_&kindMask == kindInterface:
+	case fint.Kind_&abi.KindMask == abi.Interface:
 		ityp := (*interfacetype)(unsafe.Pointer(fint))
 		if len(ityp.Methods) == 0 {
 			// ok - satisfies empty interface

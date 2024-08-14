@@ -124,12 +124,7 @@ TEXT gogo<>(SB), NOSPLIT|NOFRAME, $0
 // Fn must never return. It should gogo(&g->sched)
 // to keep running g.
 TEXT runtime·mcall<ABIInternal>(SB), NOSPLIT|NOFRAME, $0-8
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R4, REGCTXT
-#else
-	MOVV	fn+0(FP), REGCTXT
-#endif
-
 	// Save caller state in g->sched
 	MOVV	R3, (g_sched+gobuf_sp)(g)
 	MOVV	R1, (g_sched+gobuf_pc)(g)
@@ -213,6 +208,29 @@ noswitch:
 	ADDV	$8, R3
 	JMP	(R4)
 
+// func switchToCrashStack0(fn func())
+TEXT runtime·switchToCrashStack0(SB), NOSPLIT, $0-8
+	MOVV	fn+0(FP), REGCTXT	// context register
+	MOVV	g_m(g), R4	// curm
+
+	// set g to gcrash
+	MOVV	$runtime·gcrash(SB), g	// g = &gcrash
+	JAL	runtime·save_g(SB)
+	MOVV	R4, g_m(g)	// g.m = curm
+	MOVV	g, m_g0(R4)	// curm.g0 = g
+
+	// switch to crashstack
+	MOVV	(g_stack+stack_hi)(g), R4
+	ADDV	$(-4*8), R4, R3
+
+	// call target function
+	MOVV	0(REGCTXT), R6
+	JAL	(R6)
+
+	// should never return
+	JAL	runtime·abort(SB)
+	UNDEF
+
 /*
  * support for morestack
  */
@@ -226,6 +244,13 @@ noswitch:
 // calling the scheduler calling newm calling gc), so we must
 // record an argument size. For that purpose, it has no arguments.
 TEXT runtime·morestack(SB),NOSPLIT|NOFRAME,$0-0
+	// Called from f.
+	// Set g->sched to context in f.
+	MOVV	R3, (g_sched+gobuf_sp)(g)
+	MOVV	R1, (g_sched+gobuf_pc)(g)
+	MOVV	R31, (g_sched+gobuf_lr)(g)
+	MOVV	REGCTXT, (g_sched+gobuf_ctxt)(g)
+
 	// Cannot grow scheduler stack (m->g0).
 	MOVV	g_m(g), R7
 	MOVV	m_g0(R7), R8
@@ -238,13 +263,6 @@ TEXT runtime·morestack(SB),NOSPLIT|NOFRAME,$0-0
 	BNE	g, R8, 3(PC)
 	JAL	runtime·badmorestackgsignal(SB)
 	JAL	runtime·abort(SB)
-
-	// Called from f.
-	// Set g->sched to context in f.
-	MOVV	R3, (g_sched+gobuf_sp)(g)
-	MOVV	R1, (g_sched+gobuf_pc)(g)
-	MOVV	R31, (g_sched+gobuf_lr)(g)
-	MOVV	REGCTXT, (g_sched+gobuf_ctxt)(g)
 
 	// Called from f.
 	// Set m->morebuf to f's caller.
@@ -670,7 +688,6 @@ TEXT ·checkASM(SB),NOSPLIT,$0-1
 	MOVB	R19, ret+0(FP)
 	RET
 
-#ifdef GOEXPERIMENT_regabiargs
 // spillArgs stores return values from registers to a *internal/abi.RegArgs in R25.
 TEXT ·spillArgs(SB),NOSPLIT,$0-0
 	MOVV	R4, (0*8)(R25)
@@ -742,13 +759,6 @@ TEXT ·unspillArgs(SB),NOSPLIT,$0-0
 	MOVD	(30*8)(R25), F14
 	MOVD	(31*8)(R25), F15
 	RET
-#else
-TEXT ·spillArgs(SB),NOSPLIT,$0-0
-	RET
-
-TEXT ·unspillArgs(SB),NOSPLIT,$0-0
-	RET
-#endif
 
 // gcWriteBarrier informs the GC about heap pointer writes.
 //
@@ -878,155 +888,70 @@ TEXT runtime·gcWriteBarrier8<ABIInternal>(SB),NOSPLIT,$0
 // then tail call to the corresponding runtime handler.
 // The tail call makes these stubs disappear in backtraces.
 TEXT runtime·panicIndex<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R20, R4
 	MOVV	R21, R5
-#else
-	MOVV	R20, x+0(FP)
-	MOVV	R21, y+8(FP)
-#endif
 	JMP	runtime·goPanicIndex<ABIInternal>(SB)
 TEXT runtime·panicIndexU<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R20, R4
 	MOVV	R21, R5
-#else
-	MOVV	R20, x+0(FP)
-	MOVV	R21, y+8(FP)
-#endif
 	JMP	runtime·goPanicIndexU<ABIInternal>(SB)
 TEXT runtime·panicSliceAlen<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R21, R4
 	MOVV	R23, R5
-#else
-	MOVV	R21, x+0(FP)
-	MOVV	R23, y+8(FP)
-#endif
 	JMP	runtime·goPanicSliceAlen<ABIInternal>(SB)
 TEXT runtime·panicSliceAlenU<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R21, R4
 	MOVV	R23, R5
-#else
-	MOVV	R21, x+0(FP)
-	MOVV	R23, y+8(FP)
-#endif
 	JMP	runtime·goPanicSliceAlenU<ABIInternal>(SB)
 TEXT runtime·panicSliceAcap<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R21, R4
 	MOVV	R23, R5
-#else
-	MOVV	R21, x+0(FP)
-	MOVV	R23, y+8(FP)
-#endif
 	JMP	runtime·goPanicSliceAcap<ABIInternal>(SB)
 TEXT runtime·panicSliceAcapU<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R21, R4
 	MOVV	R23, R5
-#else
-	MOVV	R21, x+0(FP)
-	MOVV	R23, y+8(FP)
-#endif
 	JMP	runtime·goPanicSliceAcapU<ABIInternal>(SB)
 TEXT runtime·panicSliceB<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R20, R4
 	MOVV	R21, R5
-#else
-	MOVV	R20, x+0(FP)
-	MOVV	R21, y+8(FP)
-#endif
 	JMP	runtime·goPanicSliceB<ABIInternal>(SB)
 TEXT runtime·panicSliceBU<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R20, R4
 	MOVV	R21, R5
-#else
-	MOVV	R20, x+0(FP)
-	MOVV	R21, y+8(FP)
-#endif
 	JMP	runtime·goPanicSliceBU<ABIInternal>(SB)
 TEXT runtime·panicSlice3Alen<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R23, R4
 	MOVV	R24, R5
-#else
-	MOVV	R23, x+0(FP)
-	MOVV	R24, y+8(FP)
-#endif
 	JMP	runtime·goPanicSlice3Alen<ABIInternal>(SB)
 TEXT runtime·panicSlice3AlenU<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R23, R4
 	MOVV	R24, R5
-#else
-	MOVV	R23, x+0(FP)
-	MOVV	R24, y+8(FP)
-#endif
 	JMP	runtime·goPanicSlice3AlenU<ABIInternal>(SB)
 TEXT runtime·panicSlice3Acap<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R23, R4
 	MOVV	R24, R5
-#else
-	MOVV	R23, x+0(FP)
-	MOVV	R24, y+8(FP)
-#endif
 	JMP	runtime·goPanicSlice3Acap<ABIInternal>(SB)
 TEXT runtime·panicSlice3AcapU<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R23, R4
 	MOVV	R24, R5
-#else
-	MOVV	R23, x+0(FP)
-	MOVV	R24, y+8(FP)
-#endif
 	JMP	runtime·goPanicSlice3AcapU<ABIInternal>(SB)
 TEXT runtime·panicSlice3B<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R21, R4
 	MOVV	R23, R5
-#else
-	MOVV	R21, x+0(FP)
-	MOVV	R23, y+8(FP)
-#endif
 	JMP	runtime·goPanicSlice3B<ABIInternal>(SB)
 TEXT runtime·panicSlice3BU<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R21, R4
 	MOVV	R23, R5
-#else
-	MOVV	R21, x+0(FP)
-	MOVV	R23, y+8(FP)
-#endif
 	JMP	runtime·goPanicSlice3BU<ABIInternal>(SB)
 TEXT runtime·panicSlice3C<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R20, R4
 	MOVV	R21, R5
-#else
-	MOVV	R20, x+0(FP)
-	MOVV	R21, y+8(FP)
-#endif
 	JMP	runtime·goPanicSlice3C<ABIInternal>(SB)
 TEXT runtime·panicSlice3CU<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R20, R4
 	MOVV	R21, R5
-#else
-	MOVV	R20, x+0(FP)
-	MOVV	R21, y+8(FP)
-#endif
 	JMP	runtime·goPanicSlice3CU<ABIInternal>(SB)
 TEXT runtime·panicSliceConvert<ABIInternal>(SB),NOSPLIT,$0-16
-#ifdef GOEXPERIMENT_regabiargs
 	MOVV	R23, R4
 	MOVV	R24, R5
-#else
-	MOVV	R23, x+0(FP)
-	MOVV	R24, y+8(FP)
-#endif
 	JMP	runtime·goPanicSliceConvert<ABIInternal>(SB)

@@ -1,5 +1,6 @@
 [!buildmode:plugin] skip
 [short] skip
+[!cgo] skip '-buildmode=plugin requires external linking'
 
 # This test has problems when run on the LUCI darwin longtest builder,
 # which uses a more contemporary Xcode version that is unfriendly to

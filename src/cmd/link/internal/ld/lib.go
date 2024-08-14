@@ -47,6 +47,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"cmd/internal/bio"
 	"cmd/internal/goobj"
@@ -271,10 +272,6 @@ var (
 	rpath   Rpath
 	spSize  int32
 	symSize int32
-)
-
-const (
-	MINFUNC = 16 // minimum size for a function
 )
 
 // Symbol version of ABIInternal symbols. It is sym.SymVerABIInternal if ABI wrappers
@@ -521,6 +518,9 @@ func (ctxt *Link) findLibPath(libname string) string {
 
 func (ctxt *Link) loadlib() {
 	var flags uint32
+	if *flagCheckLinkname {
+		flags |= loader.FlagCheckLinkname
+	}
 	switch *FlagStrictDups {
 	case 0:
 		// nothing to do
@@ -892,9 +892,9 @@ func (ctxt *Link) linksetup() {
 		}
 
 		// Set runtime.disableMemoryProfiling bool if
-		// runtime.MemProfile is not retained in the binary after
+		// runtime.memProfileInternal is not retained in the binary after
 		// deadcode (and we're not dynamically linking).
-		memProfile := ctxt.loader.Lookup("runtime.MemProfile", abiInternalVer)
+		memProfile := ctxt.loader.Lookup("runtime.memProfileInternal", abiInternalVer)
 		if memProfile != 0 && !ctxt.loader.AttrReachable(memProfile) && !ctxt.DynlinkingGo() {
 			memProfSym := ctxt.loader.LookupOrCreateSym("runtime.disableMemoryProfiling", 0)
 			sb := ctxt.loader.MakeSymbolUpdater(memProfSym)
@@ -1272,6 +1272,22 @@ func hostlinksetup(ctxt *Link) {
 	}
 }
 
+// cleanTimeStamps resets the timestamps for the specified list of
+// existing files to the Unix epoch (1970-01-01 00:00:00 +0000 UTC).
+// We take this step in order to help preserve reproducible builds;
+// this seems to be primarily needed for external linking on on Darwin
+// with later versions of xcode, which (unfortunately) seem to want to
+// incorporate object file times into the final output file's build
+// ID. See issue 64947 for the unpleasant details.
+func cleanTimeStamps(files []string) {
+	epocht := time.Unix(0, 0)
+	for _, f := range files {
+		if err := os.Chtimes(f, epocht, epocht); err != nil {
+			Exitf("cannot chtimes %s: %v", f, err)
+		}
+	}
+}
+
 // hostobjCopy creates a copy of the object files in hostobj in a
 // temporary directory.
 func (ctxt *Link) hostobjCopy() (paths []string) {
@@ -1340,6 +1356,8 @@ INSERT AFTER .debug_types;
 	return path
 }
 
+type machoUpdateFunc func(ctxt *Link, exef *os.File, exem *macho.File, outexe string) error
+
 // archive builds a .a archive from the hostobj object files.
 func (ctxt *Link) archive() {
 	if ctxt.BuildMode != BuildModeCArchive {
@@ -1349,7 +1367,12 @@ func (ctxt *Link) archive() {
 	exitIfErrors()
 
 	if *flagExtar == "" {
+		const printProgName = "--print-prog-name=ar"
+		cc := ctxt.extld()
 		*flagExtar = "ar"
+		if linkerFlagSupported(ctxt.Arch, cc[0], "", printProgName) {
+			*flagExtar = ctxt.findExtLinkTool("ar")
+		}
 	}
 
 	mayberemoveoutfile()
@@ -1364,9 +1387,14 @@ func (ctxt *Link) archive() {
 	if ctxt.HeadType == objabi.Haix {
 		argv = append(argv, "-X64")
 	}
+	godotopath := filepath.Join(*flagTmpdir, "go.o")
+	cleanTimeStamps([]string{godotopath})
+	hostObjCopyPaths := ctxt.hostobjCopy()
+	cleanTimeStamps(hostObjCopyPaths)
+
 	argv = append(argv, *flagOutfile)
-	argv = append(argv, filepath.Join(*flagTmpdir, "go.o"))
-	argv = append(argv, ctxt.hostobjCopy()...)
+	argv = append(argv, godotopath)
+	argv = append(argv, hostObjCopyPaths...)
 
 	if ctxt.Debugvlog != 0 {
 		ctxt.Logf("archive: %s\n", strings.Join(argv, " "))
@@ -1440,8 +1468,15 @@ func (ctxt *Link) hostlink() {
 			}
 		}
 	case objabi.Hopenbsd:
-		argv = append(argv, "-Wl,-nopie")
 		argv = append(argv, "-pthread")
+		if ctxt.BuildMode != BuildModePIE {
+			argv = append(argv, "-Wl,-nopie")
+		}
+		if linkerFlagSupported(ctxt.Arch, argv[0], "", "-Wl,-z,nobtcfi") {
+			// -Wl,-z,nobtcfi is only supported on OpenBSD 7.4+, remove guard
+			// when OpenBSD 7.5 is released and 7.3 is no longer supported.
+			argv = append(argv, "-Wl,-z,nobtcfi")
+		}
 		if ctxt.Arch.InFamily(sys.ARM64) {
 			// Disable execute-only on openbsd/arm64 - the Go arm64 assembler
 			// currently stores constants in the text section rather than in rodata.
@@ -1603,12 +1638,16 @@ func (ctxt *Link) hostlink() {
 	}
 
 	var altLinker string
-	if ctxt.IsELF && ctxt.DynlinkingGo() {
-		// We force all symbol resolution to be done at program startup
+	if ctxt.IsELF && (ctxt.DynlinkingGo() || *flagBindNow) {
+		// For ELF targets, when producing dynamically linked Go code
+		// or when immediate binding is explicitly requested,
+		// we force all symbol resolution to be done at program startup
 		// because lazy PLT resolution can use large amounts of stack at
 		// times we cannot allow it to do so.
 		argv = append(argv, "-Wl,-z,now")
+	}
 
+	if ctxt.IsELF && ctxt.DynlinkingGo() {
 		// Do not let the host linker generate COPY relocations. These
 		// can move symbols out of sections that rely on stable offsets
 		// from the beginning of the section (like sym.STYPE).
@@ -1726,8 +1765,13 @@ func (ctxt *Link) hostlink() {
 		argv = append(argv, compressDWARF)
 	}
 
-	argv = append(argv, filepath.Join(*flagTmpdir, "go.o"))
-	argv = append(argv, ctxt.hostobjCopy()...)
+	hostObjCopyPaths := ctxt.hostobjCopy()
+	cleanTimeStamps(hostObjCopyPaths)
+	godotopath := filepath.Join(*flagTmpdir, "go.o")
+	cleanTimeStamps([]string{godotopath})
+
+	argv = append(argv, godotopath)
+	argv = append(argv, hostObjCopyPaths...)
 	if ctxt.HeadType == objabi.Haix {
 		// We want to have C files after Go files to remove
 		// trampolines csects made by ld.
@@ -1878,9 +1922,10 @@ func (ctxt *Link) hostlink() {
 		ctxt.Logf("\n")
 	}
 
-	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
+	cmd := exec.Command(argv[0], argv[1:]...)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		Exitf("running %s failed: %v\n%s", argv[0], err, out)
+		Exitf("running %s failed: %v\n%s\n%s", argv[0], err, cmd, out)
 	}
 
 	// Filter out useless linker warnings caused by bugs outside Go.
@@ -1931,30 +1976,48 @@ func (ctxt *Link) hostlink() {
 		ctxt.Logf("%s", out)
 	}
 
+	// Helper for updating a Macho binary in some way (shared between
+	// dwarf combining and UUID update).
+	updateMachoOutFile := func(op string, updateFunc machoUpdateFunc) {
+		// For os.Rename to work reliably, must be in same directory as outfile.
+		rewrittenOutput := *flagOutfile + "~"
+		exef, err := os.Open(*flagOutfile)
+		if err != nil {
+			Exitf("%s: %s failed: %v", os.Args[0], op, err)
+		}
+		defer exef.Close()
+		exem, err := macho.NewFile(exef)
+		if err != nil {
+			Exitf("%s: parsing Mach-O header failed: %v", os.Args[0], err)
+		}
+		if err := updateFunc(ctxt, exef, exem, rewrittenOutput); err != nil {
+			Exitf("%s: %s failed: %v", os.Args[0], op, err)
+		}
+		os.Remove(*flagOutfile)
+		if err := os.Rename(rewrittenOutput, *flagOutfile); err != nil {
+			Exitf("%s: %v", os.Args[0], err)
+		}
+	}
+
+	uuidUpdated := false
 	if combineDwarf {
 		// Find "dsymutils" and "strip" tools using CC --print-prog-name.
-		var cc []string
-		cc = append(cc, ctxt.extld()...)
-		cc = append(cc, hostlinkArchArgs(ctxt.Arch)...)
-		cc = append(cc, "--print-prog-name", "dsymutil")
-		out, err := exec.Command(cc[0], cc[1:]...).CombinedOutput()
-		if err != nil {
-			Exitf("%s: finding dsymutil failed: %v\n%s", os.Args[0], err, out)
-		}
-		dsymutilCmd := strings.TrimSuffix(string(out), "\n")
-
-		cc[len(cc)-1] = "strip"
-		out, err = exec.Command(cc[0], cc[1:]...).CombinedOutput()
-		if err != nil {
-			Exitf("%s: finding strip failed: %v\n%s", os.Args[0], err, out)
-		}
-		stripCmd := strings.TrimSuffix(string(out), "\n")
+		dsymutilCmd := ctxt.findExtLinkTool("dsymutil")
+		stripCmd := ctxt.findExtLinkTool("strip")
 
 		dsym := filepath.Join(*flagTmpdir, "go.dwarf")
 		cmd := exec.Command(dsymutilCmd, "-f", *flagOutfile, "-o", dsym)
 		// dsymutil may not clean up its temp directory at exit.
 		// Set DSYMUTIL_REPRODUCER_PATH to work around. see issue 59026.
-		cmd.Env = append(os.Environ(), "DSYMUTIL_REPRODUCER_PATH="+*flagTmpdir)
+		// dsymutil (Apple LLVM version 16.0.0) deletes the directory
+		// even if it is not empty. We still need our tmpdir, so give a
+		// subdirectory to dsymutil.
+		dsymDir := filepath.Join(*flagTmpdir, "dsymutil")
+		err := os.MkdirAll(dsymDir, 0777)
+		if err != nil {
+			Exitf("fail to create temp dir: %v", err)
+		}
+		cmd.Env = append(os.Environ(), "DSYMUTIL_REPRODUCER_PATH="+dsymDir)
 		if ctxt.Debugvlog != 0 {
 			ctxt.Logf("host link dsymutil:")
 			for _, v := range cmd.Args {
@@ -1963,7 +2026,7 @@ func (ctxt *Link) hostlink() {
 			ctxt.Logf("\n")
 		}
 		if out, err := cmd.CombinedOutput(); err != nil {
-			Exitf("%s: running dsymutil failed: %v\n%s", os.Args[0], err, out)
+			Exitf("%s: running dsymutil failed: %v\n%s\n%s", os.Args[0], err, cmd, out)
 		}
 		// Remove STAB (symbolic debugging) symbols after we are done with them (by dsymutil).
 		// They contain temporary file paths and make the build not reproducible.
@@ -1982,31 +2045,24 @@ func (ctxt *Link) hostlink() {
 			}
 			ctxt.Logf("\n")
 		}
-		if out, err := exec.Command(stripCmd, stripArgs...).CombinedOutput(); err != nil {
-			Exitf("%s: running strip failed: %v\n%s", os.Args[0], err, out)
+		cmd = exec.Command(stripCmd, stripArgs...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			Exitf("%s: running strip failed: %v\n%s\n%s", os.Args[0], err, cmd, out)
 		}
 		// Skip combining if `dsymutil` didn't generate a file. See #11994.
-		if _, err := os.Stat(dsym); os.IsNotExist(err) {
-			return
+		if _, err := os.Stat(dsym); err == nil {
+			updateMachoOutFile("combining dwarf",
+				func(ctxt *Link, exef *os.File, exem *macho.File, outexe string) error {
+					return machoCombineDwarf(ctxt, exef, exem, dsym, outexe)
+				})
+			uuidUpdated = true
 		}
-		// For os.Rename to work reliably, must be in same directory as outfile.
-		combinedOutput := *flagOutfile + "~"
-		exef, err := os.Open(*flagOutfile)
-		if err != nil {
-			Exitf("%s: combining dwarf failed: %v", os.Args[0], err)
-		}
-		defer exef.Close()
-		exem, err := macho.NewFile(exef)
-		if err != nil {
-			Exitf("%s: parsing Mach-O header failed: %v", os.Args[0], err)
-		}
-		if err := machoCombineDwarf(ctxt, exef, exem, dsym, combinedOutput); err != nil {
-			Exitf("%s: combining dwarf failed: %v", os.Args[0], err)
-		}
-		os.Remove(*flagOutfile)
-		if err := os.Rename(combinedOutput, *flagOutfile); err != nil {
-			Exitf("%s: %v", os.Args[0], err)
-		}
+	}
+	if ctxt.IsDarwin() && !uuidUpdated && *flagBuildid != "" {
+		updateMachoOutFile("rewriting uuid",
+			func(ctxt *Link, exef *os.File, exem *macho.File, outexe string) error {
+				return machoRewriteUuid(ctxt, exef, exem, outexe)
+			})
 	}
 	if ctxt.NeedCodeSign() {
 		err := machoCodeSign(ctxt, *flagOutfile)
@@ -2839,6 +2895,7 @@ func captureHostObj(h *Hostobj) {
 		if err != nil {
 			log.Fatalf("capturing host obj: open failed on %s: %v", h.pn, err)
 		}
+		defer inf.Close()
 		res := make([]byte, h.length)
 		if n, err := inf.ReadAt(res, h.off); err != nil || n != int(h.length) {
 			log.Fatalf("capturing host obj: readat failed on %s: %v", h.pn, err)
@@ -2853,4 +2910,20 @@ func captureHostObj(h *Hostobj) {
 
 	fmt.Fprintf(os.Stderr, "link: info: captured host object %s to %s\n",
 		h.file, opath)
+}
+
+// findExtLinkTool invokes the external linker CC with --print-prog-name
+// passing the name of the tool we're interested in, such as "strip",
+// "ar", or "dsymutil", and returns the path passed back from the command.
+func (ctxt *Link) findExtLinkTool(toolname string) string {
+	var cc []string
+	cc = append(cc, ctxt.extld()...)
+	cc = append(cc, hostlinkArchArgs(ctxt.Arch)...)
+	cc = append(cc, "--print-prog-name", toolname)
+	out, err := exec.Command(cc[0], cc[1:]...).CombinedOutput()
+	if err != nil {
+		Exitf("%s: finding %s failed: %v\n%s", os.Args[0], toolname, err, out)
+	}
+	cmdpath := strings.TrimRight(string(out), "\r\n")
+	return cmdpath
 }
