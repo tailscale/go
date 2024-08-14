@@ -33,9 +33,6 @@ type generator interface {
 	// User annotations.
 	Log(ctx *traceContext, ev *trace.Event)
 
-	// User annotations.
-	Log(ctx *traceContext, ev *tracev2.Event)
-
 	// Finish indicates the end of the trace and finalizes generation.
 	Finish(ctx *traceContext)
 }

@@ -104,21 +104,6 @@ func unalias(a0 *Alias) Type {
 	return t
 }
 
-func unalias(a0 *Alias) Type {
-	if a0.actual != nil {
-		return a0.actual
-	}
-	var t Type
-	for a := a0; a != nil; a, _ = t.(*Alias) {
-		t = a.fromRHS
-	}
-	if t == nil {
-		panic(fmt.Sprintf("non-terminated alias %s", a0.obj.name))
-	}
-	a0.actual = t
-	return t
-}
-
 // asNamed returns t as *Named if that is t's
 // actual type. It returns nil otherwise.
 func asNamed(t Type) *Named {
