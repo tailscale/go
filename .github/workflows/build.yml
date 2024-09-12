@@ -73,26 +73,7 @@ jobs:
         name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
         path: ${{ env.artifacts_path }}/${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
 
-  create_release:
-    runs-on: ubuntu-24.04
-    if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [test, build_release]
-    outputs:
-      url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-    - name: create release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        # Release name can't be the same as tag name, sigh
-        tag_name: build-${{ inputs.ref || github.sha }}
-        release_name: ${{ inputs.ref || github.sha }}
-        draft: false
-        prerelease: true
-
-  upload_release:
+  release:
     strategy:
       matrix:
         GOOS: ["linux", "darwin", "windows"]
@@ -102,21 +83,22 @@ jobs:
             GOARCH: arm64
     runs-on: ubuntu-24.04
     if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [create_release]
+    needs: [test, build_release]
     steps:
     - name: download artifact
       uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
       with:
         name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
     - name: upload artifact
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
       with:
-        upload_url: ${{ needs.create_release.outputs.url }}
-        asset_path: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
-        asset_name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
-        asset_content_type: application/gzip
+        # Release name can't be the same as tag name, sigh
+        tag_name: build-${{ inputs.ref || github.sha }}
+        name: ${{ inputs.ref || github.sha }}
+        draft: false
+        prerelease: true
+        files: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+        token: ${{ secrets.GITHUB_TOKEN }}
 
   clean_old:
     runs-on: ubuntu-24.04
