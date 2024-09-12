@@ -59,11 +59,14 @@ jobs:
         find . -name '*_test.go' -delete
     - name: archive
       run: cd .. && tar --exclude-vcs -zcf ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz go
+    - name: Set artifacts_path in env (workaround for actions/upload-artifact#176)
+      run: |
+        echo "artifacts_path=$(realpath ..)" >> $GITHUB_ENV
     - name: save
       uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0 
       with:
         name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
-        path: ../${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+        path: ${{ env.artifacts_path }}/${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
 
   create_release:
     runs-on: ubuntu-20.04
