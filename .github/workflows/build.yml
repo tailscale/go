@@ -60,7 +60,7 @@ jobs:
     - name: archive
       run: cd .. && tar --exclude-vcs -zcf ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz go
     - name: save
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
         path: ../${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
@@ -94,7 +94,7 @@ jobs:
     needs: [create_release]
     steps:
     - name: download artifact
-      uses: actions/download-artifact@v1
+      uses: actions/download-artifact@v4
       with:
         name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
     - name: upload artifact
