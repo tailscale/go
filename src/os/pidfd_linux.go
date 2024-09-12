@@ -14,6 +14,7 @@ package os
 import (
 	"errors"
 	"internal/syscall/unix"
+	"runtime"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -134,6 +135,17 @@ func (p *Process) pidfdSendSignal(s syscall.Signal) error {
 }
 
 func pidfdWorks() bool {
+	if runtime.GOOS == "android" {
+		// Tailscale-specific workaround while
+		// https://github.com/golang/go/issues/69065
+		// is fixed.
+		//
+		// See: https://github.com/tailscale/tailscale/issues/13452
+		//
+		// For now (2024-09-12), we'll just disable pidfd
+		// on all Android releases, like Go 1.22.
+		return false
+	}
 	return checkPidfdOnce() == nil
 }
 
