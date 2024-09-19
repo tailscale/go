@@ -41,6 +41,8 @@ jobs:
       uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         ref: ${{ inputs.ref || github.ref }}
+    - name: set runtime/debug.tailscaleGitRev
+      run: sed -i "s/TAILSCALE_GIT_REV_TO_BE_REPLACED_AT_BUILD_TIME/${{ github.sha }}/" src/runtime/debug/mod.go
     - name: build
       run: cd src && ./make.bash
       env:
