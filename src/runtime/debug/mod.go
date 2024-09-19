@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+const tailscaleGitRev = `TAILSCALE_GIT_REV_TO_BE_REPLACED_AT_BUILD_TIME`
+
 // exported from runtime.
 func modinfo() string
 
@@ -33,6 +35,13 @@ func ReadBuildInfo() (info *BuildInfo, ok bool) {
 	// ParseBuildInfo does not recognize it. We inject it here to hide this
 	// awkwardness from the user.
 	bi.GoVersion = runtime.Version()
+
+	if len(tailscaleGitRev) > 0 && tailscaleGitRev[0] != 'T' {
+		bi.Settings = append(bi.Settings, BuildSetting{
+			Key:   "tailscale.toolchain.rev",
+			Value: tailscaleGitRev,
+		})
+	}
 
 	return bi, true
 }
