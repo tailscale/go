@@ -26,10 +26,11 @@ type timer struct {
 	// mu protects reads and writes to all fields, with exceptions noted below.
 	mu mutex
 
-	astate  atomic.Uint8 // atomic copy of state bits at last unlock
-	state   uint8        // state bits
-	isChan  bool         // timer has a channel; immutable; can be read without lock
-	blocked uint32       // number of goroutines blocked on timer's channel
+	astate atomic.Uint8 // atomic copy of state bits at last unlock
+	state  uint8        // state bits
+	isChan bool         // timer has a channel; immutable; can be read without lock
+
+	blocked uint32 // number of goroutines blocked on timer's channel
 
 	// Timer wakes up at when, and then at when+period, ... (period > 0 only)
 	// each time calling f(arg, seq, delay) in the timer goroutine, so f must be
@@ -68,6 +69,20 @@ type timer struct {
 	// sendLock protects sends on the timer's channel.
 	// Not used for async (pre-Go 1.23) behavior when debug.asynctimerchan.Load() != 0.
 	sendLock mutex
+
+	// isSending is used to handle races between running a
+	// channel timer and stopping or resetting the timer.
+	// It is used only for channel timers (t.isChan == true).
+	// It is not used for tickers.
+	// The value is incremented when about to send a value on the channel,
+	// and decremented after sending the value.
+	// The stop/reset code uses this to detect whether it
+	// stopped the channel send.
+	//
+	// isSending is incremented only when t.mu is held.
+	// isSending is decremented only when t.sendLock is held.
+	// isSending is read only when both t.mu and t.sendLock are held.
+	isSending atomic.Int32
 }
 
 // init initializes a newly allocated timer t.
@@ -431,6 +446,15 @@ func (t *timer) stop() bool {
 		// Stop any future sends with stale values.
 		// See timer.unlockAndRun.
 		t.seq++
+
+		// If there is currently a send in progress,
+		// incrementing seq is going to prevent that
+		// send from actually happening. That means
+		// that we should return true: the timer was
+		// stopped, even though t.when may be zero.
+		if t.period == 0 && t.isSending.Load() > 0 {
+			pending = true
+		}
 	}
 	t.unlock()
 	if !async && t.isChan {
@@ -490,6 +514,7 @@ func (t *timer) modify(when, period int64, f func(arg any, seq uintptr, delay in
 		t.maybeRunAsync()
 	}
 	t.trace("modify")
+	oldPeriod := t.period
 	t.period = period
 	if f != nil {
 		t.f = f
@@ -525,6 +550,15 @@ func (t *timer) modify(when, period int64, f func(arg any, seq uintptr, delay in
 		// Stop any future sends with stale values.
 		// See timer.unlockAndRun.
 		t.seq++
+
+		// If there is currently a send in progress,
+		// incrementing seq is going to prevent that
+		// send from actually happening. That means
+		// that we should return true: the timer was
+		// stopped, even though t.when may be zero.
+		if oldPeriod == 0 && t.isSending.Load() > 0 {
+			pending = true
+		}
 	}
 	t.unlock()
 	if !async && t.isChan {
@@ -1013,6 +1047,15 @@ func (t *timer) unlockAndRun(now int64) {
 		}
 		t.updateHeap()
 	}
+
+	async := debug.asynctimerchan.Load() != 0
+	if !async && t.isChan && t.period == 0 {
+		// Tell Stop/Reset that we are sending a value.
+		if t.isSending.Add(1) < 0 {
+			throw("too many concurrent timer firings")
+		}
+	}
+
 	t.unlock()
 
 	if raceenabled {
@@ -1028,7 +1071,6 @@ func (t *timer) unlockAndRun(now int64) {
 		ts.unlock()
 	}
 
-	async := debug.asynctimerchan.Load() != 0
 	if !async && t.isChan {
 		// For a timer channel, we want to make sure that no stale sends
 		// happen after a t.stop or t.modify, but we cannot hold t.mu
@@ -1044,7 +1086,21 @@ func (t *timer) unlockAndRun(now int64) {
 		// and double-check that t.seq is still the seq value we saw above.
 		// If not, the timer has been updated and we should skip the send.
 		// We skip the send by reassigning f to a no-op function.
+		//
+		// The isSending field tells t.stop or t.modify that we have
+		// started to send the value. That lets them correctly return
+		// true meaning that no value was sent.
 		lock(&t.sendLock)
+
+		if t.period == 0 {
+			// We are committed to possibly sending a value
+			// based on seq, so no need to keep telling
+			// stop/modify that we are sending.
+			if t.isSending.Add(-1) < 0 {
+				throw("mismatched isSending updates")
+			}
+		}
+
 		if t.seq != seq {
 			f = func(any, uintptr, int64) {}
 		}
