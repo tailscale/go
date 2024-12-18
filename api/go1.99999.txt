@@ -9,3 +9,4 @@ pkg net, type SockTrace struct, DidWrite func(int) #58
 pkg net, type SockTrace struct, WillCloseTCPConn func(syscall.RawConn) #58
 pkg net, type SockTrace struct, WillOverwrite func(*SockTrace) #58
 pkg net/http, func SetRoundTripEnforcer(func(*Request) error) #55
+pkg runtime, func TailscaleCurrentP() int #109
