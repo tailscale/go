@@ -117,17 +117,3 @@ jobs:
         asset_path: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
         asset_name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
         asset_content_type: application/gzip
-
-  clean_old:
-    runs-on: ubuntu-24.04
-    # Do not clean up old builds on workflow_dispatch to allow temporarily
-    # re-creating old releases for backports.
-    if: github.event_name == 'push'
-    needs: [upload_release]
-    steps:
-    - name: checkout
-      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      with:
-        ref: ${{ inputs.ref || github.ref }}
-    - name: Delete older builds
-      run: ./.github/workflows/prune_old_builds.sh "${{ secrets.GITHUB_TOKEN }}"
