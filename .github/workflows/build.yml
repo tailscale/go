@@ -40,9 +40,6 @@ jobs:
       matrix:
         GOOS: ["linux", "darwin", "windows"]
         GOARCH: ["amd64", "arm64"]
-        exclude:
-          - GOOS: windows
-            GOARCH: arm64
     runs-on: ubuntu-24.04
     if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     steps:
