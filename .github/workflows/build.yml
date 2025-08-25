@@ -91,11 +91,18 @@ jobs:
     outputs:
       url: ${{ steps.create_release.outputs.upload_url }}
     steps:
+    - name: create app token
+      uses: actions/create-github-app-token@v1
+      id: app-token
+      with:
+        # required
+        app-id: ${{ vars.TS_LEGACY_BUILDER_APP_ID }}
+        private-key: ${{ secrets.TS_LEGACY_BUILDER_PRIVKEY }}
     - name: create release
       id: create_release
       uses: actions/create-release@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
       with:
         # Release name can't be the same as tag name, sigh
         tag_name: build-${{ inputs.ref || github.sha }}
