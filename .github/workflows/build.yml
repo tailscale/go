@@ -81,7 +81,12 @@ jobs:
 
   create_release:
     runs-on: ubuntu-24.04
-    if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    # By default, the "if" check here is skipped if one of the jobs in the "needs" block
+    # has been skipped. Adding `always()` ensures that we perform the check even if one
+    # of the jobs is skipped. We must check that the result of `build_release` is
+    # "success" and that `test` is one of "success" or "skipped" as a result to ensure
+    # we are only creating a release when the `test` job has suceeded or been skipped.
+    if: always() && contains(needs.build_release.result, 'success') && (contains(needs.test.result, 'success') || contains(needs.test.result, 'skipped')) && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     needs: [test, build_release]
     outputs:
       url: ${{ steps.create_release.outputs.upload_url }}
