@@ -9,6 +9,7 @@ package syscall
 import (
 	"internal/bytealg"
 	"runtime"
+	"slices"
 	"sync"
 	"unicode/utf16"
 	"unsafe"
@@ -113,6 +114,43 @@ func makeCmdLine(args []string) string {
 	return string(b)
 }
 
+func envSorted(envv []string) []string {
+	if len(envv) < 2 {
+		return envv
+	}
+
+	lowerKeyCache := map[string]string{} // lowercased keys to avoid recomputing them in sort
+	lowerKey := func(kv string) string {
+		eq := bytealg.IndexByteString(kv, '=')
+		if eq < 0 {
+			return ""
+		}
+		k := kv[:eq]
+		v, ok := lowerKeyCache[k]
+		if !ok {
+			low := []byte(k)
+			for i, b := range low {
+				if 'a' <= b && b <= 'z' {
+					low[i] -= 'a' - 'A'
+				}
+			}
+			v = string(low)
+			lowerKeyCache[k] = v
+		}
+		return v
+	}
+
+	cmpEnv := func(a, b string) int {
+		return bytealg.CompareString(lowerKey(a), lowerKey(b))
+	}
+
+	if !slices.IsSortedFunc(envv, cmpEnv) {
+		envv = slices.Clone(envv)
+		slices.SortFunc(envv, cmpEnv)
+	}
+	return envv
+}
+
 // createEnvBlock converts an array of environment strings into
 // the representation required by CreateProcess: a sequence of NUL
 // terminated strings followed by a nil.
@@ -122,6 +160,12 @@ func createEnvBlock(envv []string) ([]uint16, error) {
 	if len(envv) == 0 {
 		return utf16.Encode([]rune("\x00\x00")), nil
 	}
+
+	// https://learn.microsoft.com/en-us/windows/win32/procthread/changing-environment-variables
+	// says that: "All strings in the environment block must be sorted
+	// alphabetically by name."
+	envv = envSorted(envv)
+
 	var length int
 	for _, s := range envv {
 		if bytealg.IndexByteString(s, 0) != -1 {
