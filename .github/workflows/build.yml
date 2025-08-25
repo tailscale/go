@@ -100,6 +100,7 @@ jobs:
         # Release name can't be the same as tag name, sigh
         tag_name: build-${{ inputs.ref || github.sha }}
         release_name: ${{ inputs.ref || github.sha }}
+        commitish: ${{ inputs.ref || github.sha }}
         draft: false
         prerelease: true
 
@@ -112,7 +113,10 @@ jobs:
           - GOOS: windows
             GOARCH: arm64
     runs-on: ubuntu-24.04
-    if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    # We need to do the `always()` hack here as well since the upstream `create_release` job
+    # needs it and this seems to transitively require that downstream jobs also have a similar
+    # check.
+    if: always() && contains(needs.create_release.result, 'success') && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     needs: [create_release]
     steps:
     - name: download artifact
