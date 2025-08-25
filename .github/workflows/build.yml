@@ -17,10 +17,16 @@ on:
         description: Branch, commit or tag to build from
         required: true
         default: 'tailscale.go1.24'
+      skipTests:
+        description: Whether to skip tests. This should only be used in break-glass / extraordinary scenarios.
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   test:
     runs-on: ubuntu-24.04
+    if: ${{ !inputs.skipTests }}
     steps:
     - name: checkout
       uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
