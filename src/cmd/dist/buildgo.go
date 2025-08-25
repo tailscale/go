@@ -107,6 +107,22 @@ func defaultCCFunc(name string, defaultcc map[string]string) string {
 	return buf.String()
 }
 
+// mkzcgo writes zcgo.go for the go/build package:
+//
+//	package build
+//	const defaultCGO_ENABLED = <CGO_ENABLED>
+//
+// It is invoked to write go/build/zcgo.go.
+func mkzcgo(dir, file string) {
+	var buf strings.Builder
+	writeHeader(&buf)
+	fmt.Fprintf(&buf, "package build\n")
+	fmt.Fprintln(&buf)
+	fmt.Fprintf(&buf, "const defaultCGO_ENABLED = %q\n", "")
+
+	writefile(buf.String(), file, writeSkipSame)
+}
+
 // mktzdata src/time/tzdata/zzipdata.go:
 //
 //	package tzdata
