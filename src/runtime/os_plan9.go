@@ -6,7 +6,6 @@ package runtime
 
 import (
 	"internal/abi"
-	"internal/byteorder"
 	"internal/runtime/atomic"
 	"internal/stringslite"
 	"unsafe"
@@ -364,7 +363,13 @@ func crash() {
 //
 //go:nosplit
 func readRandom(r []byte) int {
-	return 0
+	fd := open(&randomDev[0], _OREAD|_OCEXEC, 0)
+	if fd < 0 {
+		fatal("cannot open /dev/random")
+	}
+	n := int(read(fd, unsafe.Pointer(&r[0]), int32(len(r))))
+	closefd(fd)
+	return n
 }
 
 func initsig(preinit bool) {
@@ -573,7 +578,8 @@ func timesplit(u uint64) (sec int64, nsec int32)
 
 func frombe(u uint64) uint64 {
 	b := (*[8]byte)(unsafe.Pointer(&u))
-	return byteorder.BEUint64(b[:])
+	return uint64(b[7]) | uint64(b[6])<<8 | uint64(b[5])<<16 | uint64(b[4])<<24 |
+		uint64(b[3])<<32 | uint64(b[2])<<40 | uint64(b[1])<<48 | uint64(b[0])<<56
 }
 
 //go:nosplit
@@ -593,4 +599,19 @@ func walltime() (sec int64, nsec int32) {
 	var t [1]uint64
 	readtime(&t[0], 1, 1)
 	return timesplit(frombe(t[0]))
+}
+
+// Do not remove or change the type signature.
+// See comment in timestub.go.
+//
+//go:linkname time_now time.now
+func time_now() (sec int64, nsec int32, mono int64) {
+	var t [4]uint64
+	if readtime(&t[0], 1, 4) == 4 {
+		mono = int64(frombe(t[3])) // new kernel, use monotonic time
+	} else {
+		mono = int64(frombe(t[0])) // old kernel, fall back to unix time
+	}
+	sec, nsec = timesplit(frombe(t[0]))
+	return
 }
