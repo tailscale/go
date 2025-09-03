@@ -963,6 +963,13 @@ func (c *Conn) processCertsFromClient(certificate Certificate) error {
 			opts.Intermediates.AddCert(cert)
 		}
 
+		// optionally allow client certs with ExtKeyUsageServerAuth to permit LE
+		// certs to work past October 1, 2025 ExtKeyUsageClientAuth deprecation
+		// ref: http://go/corp/28569
+		if c.config.IgnoreClientKeyExtUsageClientAuth {
+			opts.KeyUsages = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+		}
+
 		chains, err := certs[0].Verify(opts)
 		if err != nil {
 			var errCertificateInvalid x509.CertificateInvalidError

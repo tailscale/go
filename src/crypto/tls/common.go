@@ -883,6 +883,10 @@ type Config struct {
 	// autoSessionTicketKeys is like sessionTicketKeys but is owned by the
 	// auto-rotation logic. See Config.ticketKeys.
 	autoSessionTicketKeys []ticketKey
+	// IgnoreClientKeyExtUsageClientAuth disables the requirement for client TLS
+	// certificates presented to the server to include the
+	// `x509.ExtKeyUsageClientAuth` key usage attribute.
+	IgnoreClientKeyExtUsageClientAuth bool
 }
 
 // EncryptedClientHelloKey holds a private key that is associated
