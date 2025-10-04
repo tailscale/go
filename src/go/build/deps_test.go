@@ -111,7 +111,7 @@ var depsRules = `
 	< errors
 	< internal/oserror;
 
-	cmp, runtime, math/bits
+	cmp, runtime, math/bits, internal/reflectlite
 	< iter
 	< maps, slices;
 

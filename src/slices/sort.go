@@ -8,14 +8,16 @@ package slices
 
 import (
 	"cmp"
+	"internal/reflectlite"
 	"math/bits"
 )
 
 // Sort sorts a slice of any ordered type in ascending order.
 // When sorting floating-point numbers, NaNs are ordered before other values.
 func Sort[S ~[]E, E cmp.Ordered](x S) {
-	n := len(x)
-	pdqsortOrdered(x, 0, n, bits.Len(uint(n)))
+	sortSlice(x, func(i, j int) bool {
+		return cmp.Less(x[i], x[j])
+	})
 }
 
 // SortFunc sorts the slice x in ascending order as determined by the cmp
@@ -28,14 +30,36 @@ func Sort[S ~[]E, E cmp.Ordered](x S) {
 // See https://en.wikipedia.org/wiki/Weak_ordering#Strict_weak_orderings.
 // The function should return 0 for incomparable items.
 func SortFunc[S ~[]E, E any](x S, cmp func(a, b E) int) {
-	n := len(x)
-	pdqsortCmpFunc(x, 0, n, bits.Len(uint(n)), cmp)
+	sortSlice(x, func(i, j int) bool {
+		return cmp(x[i], x[j]) < 0
+	})
 }
 
 // SortStableFunc sorts the slice x while keeping the original order of equal
 // elements, using cmp to compare elements in the same way as [SortFunc].
 func SortStableFunc[S ~[]E, E any](x S, cmp func(a, b E) int) {
-	stableCmpFunc(x, len(x), cmp)
+	sortSliceStable(x, func(i, j int) bool {
+		return cmp(x[i], x[j]) < 0
+	})
+}
+
+type lessSwap struct {
+	Less func(i, j int) bool
+	Swap func(i, j int)
+}
+
+func sortSlice(x any, less func(i, j int) bool) {
+	rv := reflectlite.ValueOf(x)
+	swap := reflectlite.Swapper(x)
+	length := rv.Len()
+	limit := bits.Len(uint(length))
+	pdqsort_func(lessSwap{less, swap}, 0, length, limit)
+}
+
+func sortSliceStable(x any, less func(i, j int) bool) {
+	rv := reflectlite.ValueOf(x)
+	swap := reflectlite.Swapper(x)
+	stable_func(lessSwap{less, swap}, rv.Len())
 }
 
 // IsSorted reports whether x is sorted in ascending order.
