@@ -6,7 +6,9 @@ package http
 
 var roundTripEnforcer func(*Request) error
 
-// SetRoundTripEnforcer set a program-global resolver enforcer that can cause
+var responseWriteEnforcer func(*Request)
+
+// SetRoundTripEnforcer sets a program-global resolver enforcer that can cause
 // RoundTrip calls to fail based on the request and its context.
 //
 // f must be non-nil.
@@ -23,3 +25,34 @@ func SetRoundTripEnforcer(f func(*Request) error) {
 	}
 	roundTripEnforcer = f
 }
+
+// SetResponseWriteEnforcer sets a program-global response writing enforcer
+// which can panic to interrupt the sending of a response.
+//
+// f must be non-nil.
+//
+// SetResponseWriteEnforcer can only be called once, and must not be called
+// concurrent with any ResponseWriter.WriteHeader call; it's expected to be
+// registered during init.
+//
+// f only accepts a *Request - and not the ResponseWriter - because the
+// HTTP/2 responseWriterState is free to write its own status line and has no
+// reference to the responseWriter.
+func SetResponseWriteEnforcer(f func(*Request)) {
+	if f == nil {
+		panic("nil func")
+	}
+	if responseWriteEnforcer != nil {
+		panic("already called")
+	}
+	responseWriteEnforcer = f
+	if registerHTTP2ResponseWriteEnforcer != nil {
+		registerHTTP2ResponseWriteEnforcer(f)
+	}
+}
+
+// registerHTTP2ResponseWriteEnforcer installs the enforcer into the
+// net/http/internal/http2 package.
+// It is set during init by tailscale_http2.go, unless the nethttpomithttp2
+// build tag is set.
+var registerHTTP2ResponseWriteEnforcer func(f func(*Request))

@@ -2861,9 +2861,17 @@ func (w *responseWriter) WriteHeader(code int) {
 	rws.writeHeader(code)
 }
 
+// ResponseWriteEnforcer, if non-nil, is called with the request before the
+// server writes a response header.
+// It is set at most once, by net/http.SetResponseWriteEnforcer, during init.
+var ResponseWriteEnforcer func(*ServerRequest)
+
 func (rws *responseWriterState) writeHeader(code int) {
 	if rws.wroteHeader {
 		return
+	}
+	if ResponseWriteEnforcer != nil {
+		ResponseWriteEnforcer(&rws.req)
 	}
 
 	checkWriteHeaderCode(code)
