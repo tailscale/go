@@ -6947,6 +6947,9 @@ func (rws *http2responseWriterState) writeHeader(code int) {
 	if rws.wroteHeader {
 		return
 	}
+	if responseWriteEnforcer != nil {
+		responseWriteEnforcer(rws.req)
+	}
 
 	http2checkWriteHeaderCode(code)
 

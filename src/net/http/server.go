@@ -1157,6 +1157,9 @@ func (w *response) WriteHeader(code int) {
 		w.conn.server.logf("http: superfluous response.WriteHeader call from %s (%s:%d)", caller.Function, path.Base(caller.File), caller.Line)
 		return
 	}
+	if responseWriteEnforcer != nil {
+		responseWriteEnforcer(w.req)
+	}
 	checkWriteHeaderCode(code)
 
 	if code < 101 || code > 199 {
