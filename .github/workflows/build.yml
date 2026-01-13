@@ -107,9 +107,6 @@ jobs:
       matrix:
         GOOS: ["linux", "darwin", "windows"]
         GOARCH: ["amd64", "arm64"]
-        exclude:
-          - GOOS: windows
-            GOARCH: arm64
     runs-on: ubuntu-24.04
     # We need to do the `always()` hack here as well since the upstream `create_release` job
     # needs it and this seems to transitively require that downstream jobs also have a similar
