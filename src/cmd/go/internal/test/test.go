@@ -2028,7 +2028,7 @@ func hashOpen(name string) (cache.ActionID, error) {
 				hashWriteStat(h, finfo)
 			}
 		}
-	} else if info.Mode().IsRegular() {
+	} else if info.Mode().IsRegular() && !useGitHash() {
 		// Because files might be very large, do not attempt
 		// to hash the entirety of their content. Instead assume
 		// the mtime and size recorded in hashWriteStat above
@@ -2061,7 +2061,21 @@ func hashStat(name string) cache.ActionID {
 }
 
 func hashWriteStat(h io.Writer, info fs.FileInfo) {
-	fmt.Fprintf(h, "stat %d %x %v %v\n", info.Size(), uint64(info.Mode()), info.ModTime(), info.IsDir())
+	if !useGitHash() {
+		// Classic behavior: use mod time.
+		fmt.Fprintf(h, "stat %d %x %v %v\n", info.Size(), uint64(info.Mode()), info.ModTime(), info.IsDir())
+		return
+	}
+	var modTimeOrHash any = info.ModTime()
+	switch {
+	case info.Mode().IsRegular():
+		if hash, ok := getGitHash(info); ok {
+			modTimeOrHash = hash
+		}
+	default:
+		modTimeOrHash = nil // including for directories
+	}
+	fmt.Fprintf(h, "stat %d %x %v %v\n", info.Size(), uint64(info.Mode()), modTimeOrHash, info.IsDir())
 }
 
 // testAndInputKey returns the actual cache key for the pair (testID, testInputsID).
