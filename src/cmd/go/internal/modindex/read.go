@@ -28,6 +28,7 @@ import (
 	"cmd/go/internal/cache"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/fsys"
+	"cmd/go/internal/githash"
 	"cmd/go/internal/imports"
 	"cmd/go/internal/str"
 	"cmd/internal/par"
@@ -109,11 +110,11 @@ func dirHash(modroot, pkgdir string) (cache.ActionID, error) {
 		if err != nil {
 			return cache.ActionID{}, ErrNotIndexed
 		}
-		if info.ModTime().After(cutoff) {
+		if !githash.Enabled && info.ModTime().After(cutoff) {
 			return cache.ActionID{}, ErrNotIndexed
 		}
 
-		fmt.Fprintf(h, "file %v %v %v\n", info.Name(), info.ModTime(), info.Size())
+		fmt.Fprintf(h, "file %v %v %v\n", info.Name(), githash.ModTimeOrHash(info), info.Size())
 	}
 	return h.Sum(), nil
 }

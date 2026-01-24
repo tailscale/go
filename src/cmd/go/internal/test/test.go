@@ -27,6 +27,7 @@ import (
 	"cmd/go/internal/base"
 	"cmd/go/internal/cache"
 	"cmd/go/internal/cfg"
+	"cmd/go/internal/githash"
 	"cmd/go/internal/load"
 	"cmd/go/internal/lockedfile"
 	"cmd/go/internal/modload"
@@ -2028,7 +2029,7 @@ func hashOpen(name string) (cache.ActionID, error) {
 				hashWriteStat(h, finfo)
 			}
 		}
-	} else if info.Mode().IsRegular() && !useGitHash() {
+	} else if info.Mode().IsRegular() && !githash.Enabled {
 		// Because files might be very large, do not attempt
 		// to hash the entirety of their content. Instead assume
 		// the mtime and size recorded in hashWriteStat above
@@ -2061,21 +2062,7 @@ func hashStat(name string) cache.ActionID {
 }
 
 func hashWriteStat(h io.Writer, info fs.FileInfo) {
-	if !useGitHash() {
-		// Classic behavior: use mod time.
-		fmt.Fprintf(h, "stat %d %x %v %v\n", info.Size(), uint64(info.Mode()), info.ModTime(), info.IsDir())
-		return
-	}
-	var modTimeOrHash any = info.ModTime()
-	switch {
-	case info.Mode().IsRegular():
-		if hash, ok := getGitHash(info); ok {
-			modTimeOrHash = hash
-		}
-	default:
-		modTimeOrHash = nil // including for directories
-	}
-	fmt.Fprintf(h, "stat %d %x %v %v\n", info.Size(), uint64(info.Mode()), modTimeOrHash, info.IsDir())
+	fmt.Fprintf(h, "stat %d %x %v %v\n", info.Size(), uint64(info.Mode()), githash.ModTimeOrHash(info), info.IsDir())
 }
 
 // testAndInputKey returns the actual cache key for the pair (testID, testInputsID).

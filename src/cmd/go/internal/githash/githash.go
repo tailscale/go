@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package test
+package githash
 
 import (
 	"bytes"
@@ -15,16 +15,22 @@ import (
 	"sync"
 )
 
-type gitHash string // hex blog hash from git (probably SHA-1, but not necessarily)
+// GitHash is a git hash in hex form.
+//
+// It's usually a SHA-1 hash, but could be SHA-256 depending on the git
+// configuration.
+type GitHash string
 
-var useGitHash = sync.OnceValue(func() bool {
+// Enabled is whether git hash lookups are enabled via the CMD_GO_USE_GIT_HASH
+// environment variable.
+var Enabled bool
+
+func init() {
 	s := os.Getenv("CMD_GO_USE_GIT_HASH")
-	if s == "" {
-		return false
+	if s != "" {
+		Enabled, _ = strconv.ParseBool(s)
 	}
-	v, _ := strconv.ParseBool(s)
-	return v
-})
+}
 
 // gitHashKey is the key used to look up possible files in
 // a git repo that match the same base name & size.
@@ -49,7 +55,7 @@ type gitHashMap struct {
 
 type gitHashCand struct {
 	rel  string // the relative git path from "git ls-files -r"
-	hash gitHash
+	hash GitHash
 
 	statOnce sync.Once
 	stat     fs.FileInfo
@@ -127,14 +133,15 @@ func buildGitHashMap() *gitHashMap {
 		}
 		m.cands[k] = append(m.cands[k], &gitHashCand{
 			rel:  name,
-			hash: gitHash(hash),
+			hash: GitHash(hash),
 		})
 	}
 	return m
 }
 
-func getGitHash(info fs.FileInfo) (gitHash, bool) {
-	if !useGitHash() || info == nil || !info.Mode().IsRegular() {
+// Hash returns the git hash for the given file info, if available.
+func Hash(info fs.FileInfo) (GitHash, bool) {
+	if !Enabled || info == nil || !info.Mode().IsRegular() {
 		return "", false
 	}
 	k := gitHashKey{
@@ -151,4 +158,25 @@ func getGitHash(info fs.FileInfo) (gitHash, bool) {
 		}
 	}
 	return "", false
+}
+
+// ModTimeOrHash returns either the git hash (if enabled and available) or the
+// mod time of the given file info.
+//
+// For non-regular files (notably directories), it returns nil if git hash is
+// enabled.
+//
+// It always returns one of nil, time.Time, or GitHash (a string), all suitable
+// for use in Sprintf verb %v.
+func ModTimeOrHash(info fs.FileInfo) any {
+	if !Enabled {
+		return info.ModTime()
+	}
+	if h, ok := Hash(info); ok {
+		return h
+	}
+	if info.Mode().IsRegular() {
+		return info.ModTime()
+	}
+	return nil
 }
