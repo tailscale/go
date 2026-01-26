@@ -153,6 +153,15 @@ In addition to the build flags, the flags handled by 'go test' itself are:
 	    (where pkg is the last element of the package's import path).
 	    The file name or target directory can be changed with the -o flag.
 
+	-cachelink
+	    Cache the emphemeral test binary (the linker output) in the build
+	    cache. This avoids re-linking the test binary if running the same
+	    test binary repeatedly but with different flags, environment,
+	    or other test inputs such that the test caching rules above
+	    would not apply. On such case is Go test wrappers that shard tests
+	    within a package across multiple machines, sharing a common build
+	    cache with GOCACHEPROG.
+
 	-exec xprog
 	    Run the test binary using xprog. The behavior is the same as
 	    in 'go run'. See 'go help run' for details.
@@ -543,6 +552,7 @@ See the documentation of the testing package for more information.
 var (
 	testBench        string                            // -bench flag
 	testC            bool                              // -c flag
+	testCacheLink    bool                              // -cachelink flag
 	testCoverPkgs    []*load.Package                   // -coverpkg flag
 	testCoverProfile string                            // -coverprofile flag
 	testFailFast     bool                              // -failfast flag
@@ -1190,6 +1200,7 @@ func builderTest(b *work.Builder, ctx context.Context, pkgOpts load.PackageOpts,
 	b.CompileAction(work.ModeBuild, work.ModeBuild, pmain).Objdir = testDir
 
 	a := b.LinkAction(work.ModeBuild, work.ModeBuild, pmain)
+	a.CacheExecutable = testCacheLink
 	a.Target = testDir + testBinary + cfg.ExeSuffix
 	if cfg.Goos == "windows" {
 		// There are many reserved words on Windows that,

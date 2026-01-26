@@ -34,6 +34,7 @@ func init() {
 
 	cf := CmdTest.Flag
 	cf.BoolVar(&testC, "c", false, "")
+	cf.BoolVar(&testCacheLink, "cachelink", false, "")
 	cf.StringVar(&testO, "o", "", "")
 	work.AddCoverFlags(CmdTest, &testCoverProfile)
 	cf.Var((*base.StringsFlag)(&work.ExecCmd), "exec", "")
