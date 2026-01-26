@@ -1943,6 +1943,15 @@
 //	    (where pkg is the last element of the package's import path).
 //	    The file name or target directory can be changed with the -o flag.
 //
+//	-cachelink
+//	    Cache the emphemeral test binary (the linker output) in the build
+//	    cache. This avoids re-linking the test binary if running the same
+//	    test binary repeatedly but with different flags, environment,
+//	    or other test inputs such that the test caching rules above
+//	    would not apply. On such case is Go test wrappers that shard tests
+//	    within a package across multiple machines, sharing a common build
+//	    cache with GOCACHEPROG.
+//
 //	-exec xprog
 //	    Run the test binary using xprog. The behavior is the same as
 //	    in 'go run'. See 'go help run' for details.
