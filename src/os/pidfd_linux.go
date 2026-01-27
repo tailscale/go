@@ -138,6 +138,16 @@ func (p *Process) pidfdSendSignal(s syscall.Signal) error {
 
 // pidfdWorks returns whether we can use pidfd on this system.
 func pidfdWorks() bool {
+	if runtime.GOOS == "android" {
+		// Tailscale-specific workaround since https://github.com/golang/go/pull/69543/commits/aad6b3b32c81795f86bc4a9e81aad94899daf520
+		// does not solve https://github.com/golang/go/issues/69065 for Android apps using Go libraries.
+		//
+		// See: https://github.com/tailscale/tailscale/issues/13452
+		//
+		// For now (2025-04-09), we'll just disable pidfd
+		// on all Android releases.
+		return false
+	}
 	return checkPidfdOnce() == nil
 }
 
