@@ -1,0 +1,129 @@
+name: Build toolchain
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - tailscale
+      - 'tailscale.go1.27'
+  pull_request:
+    branches:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, commit or tag to build from
+        required: true
+        default: 'tailscale.go1.27'
+      skipTests:
+        description: Whether to skip tests. This should only be used in break-glass / extraordinary scenarios.
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    if: ${{ !inputs.skipTests }}
+    steps:
+    - name: checkout
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      with:
+        ref: ${{ inputs.ref || github.ref }}
+    - name: test
+      run: cd src && ./all.bash
+
+  build_release:
+    strategy:
+      matrix:
+        GOOS: ["linux", "darwin", "windows"]
+        GOARCH: ["amd64", "arm64"]
+    runs-on: ubuntu-24.04
+    if: contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    steps:
+    - name: checkout
+      id: checkout
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        ref: ${{ inputs.ref || github.ref }}
+    - name: set runtime/debug.tailscaleGitRev
+      run: sed -i "s/TAILSCALE_GIT_REV_TO_BE_REPLACED_AT_BUILD_TIME/${{ steps.checkout.outputs.commit }}/" src/runtime/debug/mod.go
+    - name: build
+      run: cd src && ./make.bash
+      env:
+        GOOS: "${{ matrix.GOOS }}"
+        GOARCH: "${{ matrix.GOARCH }}"
+        CGO_ENABLED: ""
+    - name: trim unnecessary bits
+      run: |
+        rm -rf pkg/*_*
+        mv pkg/tool/${{ matrix.GOOS }}_${{ matrix.GOARCH }} pkg
+        rm -rf pkg/tool/*_*
+        mv -f bin/${{ matrix.GOOS }}_${{ matrix.GOARCH }}/* bin/ || true
+        rm -rf bin/${{ matrix.GOOS }}_${{ matrix.GOARCH }}
+        mv pkg/${{ matrix.GOOS }}_${{ matrix.GOARCH }} pkg/tool
+        find . -type d -name 'testdata' -print0 | xargs -0 rm -rf
+        find . -name '*_test.go' -delete
+    - name: archive
+      run: cd .. && tar --exclude-vcs -zcf ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz go
+    - name: Set artifacts_path in env (workaround for actions/upload-artifact#176)
+      run: |
+        echo "artifacts_path=$(realpath ..)" >> $GITHUB_ENV
+    - name: save
+      uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0 
+      with:
+        name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
+        path: ${{ env.artifacts_path }}/${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+
+  create_release:
+    runs-on: ubuntu-24.04
+    # By default, the "if" check here is skipped if one of the jobs in the "needs" block
+    # has been skipped. Adding `always()` ensures that we perform the check even if one
+    # of the jobs is skipped. We must check that the result of `build_release` is
+    # "success" and that `test` is one of "success" or "skipped" as a result to ensure
+    # we are only creating a release when the `test` job has suceeded or been skipped.
+    if: always() && contains(needs.build_release.result, 'success') && (contains(needs.test.result, 'success') || contains(needs.test.result, 'skipped')) && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    needs: [test, build_release]
+    outputs:
+      url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Release name can't be the same as tag name, sigh
+          tag_name: build-${{ inputs.ref || github.sha }}
+          release_name: ${{ inputs.ref || github.sha }}
+          commitish: ${{ inputs.ref || github.sha }}
+          draft: false
+          prerelease: true
+
+  upload_release:
+    strategy:
+      matrix:
+        GOOS: ["linux", "darwin", "windows"]
+        GOARCH: ["amd64", "arm64"]
+    runs-on: ubuntu-24.04
+    # We need to do the `always()` hack here as well since the upstream `create_release` job
+    # needs it and this seems to transitively require that downstream jobs also have a similar
+    # check.
+    if: always() && contains(needs.create_release.result, 'success') && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
+    needs: [create_release]
+    steps:
+    - name: download artifact
+      uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+      with:
+        name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}
+    - name: upload artifact
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create_release.outputs.url }}
+        asset_path: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+        asset_name: ${{ matrix.GOOS }}-${{ matrix.GOARCH }}.tar.gz
+        asset_content_type: application/gzip
