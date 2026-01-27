@@ -28,6 +28,21 @@ func socket(ctx context.Context, net string, family, sotype, proto int, ipv6only
 		poll.CloseFunc(s)
 		return nil, err
 	}
+	if trace := ContextSockTrace(ctx); trace != nil {
+		fd.readHook = trace.DidRead
+		fd.writeHook = trace.DidWrite
+		if (trace.DidCreateTCPConn != nil || trace.WillCloseTCPConn != nil) && len(net) >= 3 && net[0:3] == "tcp" {
+			c := newRawConn(fd)
+			if trace.DidCreateTCPConn != nil {
+				trace.DidCreateTCPConn(c)
+			}
+			if trace.WillCloseTCPConn != nil {
+				fd.closeHook = func() {
+					trace.WillCloseTCPConn(c)
+				}
+			}
+		}
+	}
 
 	// This function makes a network file descriptor for the
 	// following applications:
