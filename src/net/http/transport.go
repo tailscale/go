@@ -609,6 +609,12 @@ func validateHeaders(hdrs Header) string {
 
 // roundTrip implements a RoundTripper over HTTP.
 func (t *Transport) roundTrip(req *Request) (_ *Response, err error) {
+	if roundTripEnforcer != nil {
+		if err := roundTripEnforcer(req); err != nil {
+			return nil, err
+		}
+	}
+
 	t.nextProtoOnce.Do(t.onceSetNextProtoDefaults)
 	ctx := req.Context()
 	trace := httptrace.ContextClientTrace(ctx)
