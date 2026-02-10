@@ -718,6 +718,16 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 		base.Fatalf("no packages to test")
 	}
 
+	if cfg.GOTESTDRIVEPROG != "" {
+		var tdErr error
+		testDriveCtl, tdErr = startTestDriveProg(cfg.GOTESTDRIVEPROG)
+		if tdErr != nil {
+			base.Fatalf("GOTESTDRIVEPROG: %v", tdErr)
+		}
+		defer testDriveCtl.Close()
+		pkgs = testDriveCtl.Discover(ctx, pkgs)
+	}
+
 	if testFuzz != "" {
 		if !platform.FuzzSupported(cfg.Goos, cfg.Goarch) {
 			base.Fatalf("-fuzz flag is not supported on %s/%s", cfg.Goos, cfg.Goarch)
@@ -1009,6 +1019,11 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 
 	// Prepare build + run + print actions for all packages being tested.
 	for _, p := range pkgs {
+		// If GOTESTDRIVEPROG is active, ask the child whether to proceed
+		// with this package before setting up the build action graph.
+		if testDriveCtl != nil && !testDriveCtl.shouldStartPackage(ctx, p.ImportPath) {
+			continue
+		}
 		reportErr := func(perr *load.Package, err error) {
 			str := err.Error()
 			if p.ImportPath != "" {
@@ -1484,6 +1499,12 @@ func (r *runTestActor) Act(b *work.Builder, ctx context.Context, a *work.Action)
 			json.Close()
 		}()
 		stdout = json
+	}
+
+	if testDriveCtl != nil {
+		close(r.next)
+		err = runWithTestDrive(ctx, b, a, stdout)
+		return err
 	}
 
 	var buf bytes.Buffer

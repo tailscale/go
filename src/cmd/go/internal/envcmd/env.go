@@ -113,6 +113,7 @@ func MkEnv() []cfg.EnvVar {
 		{Name: "GOSUMDB", Value: cfg.GOSUMDB, Changed: cfg.GOSUMDBChanged},
 		{Name: "GOTELEMETRY", Value: telemetry.Mode()},
 		{Name: "GOTELEMETRYDIR", Value: telemetry.Dir()},
+		{Name: "GOTESTDRIVEPROG", Value: cfg.GOTESTDRIVEPROG, Changed: cfg.GOTESTDRIVEPROGChanged},
 		{Name: "GOTMPDIR", Value: cfg.Getenv("GOTMPDIR")},
 		{Name: "GOTOOLCHAIN"},
 		{Name: "GOTOOLDIR", Value: build.ToolDir},

@@ -462,7 +462,8 @@ var (
 
 	GOBIN                           = Getenv("GOBIN")
 	GOCACHEPROG, GOCACHEPROGChanged = EnvOrAndChanged("GOCACHEPROG", "")
-	GOMODCACHE, GOMODCACHEChanged   = EnvOrAndChanged("GOMODCACHE", gopathDir("pkg/mod"))
+	GOMODCACHE, GOMODCACHEChanged           = EnvOrAndChanged("GOMODCACHE", gopathDir("pkg/mod"))
+	GOTESTDRIVEPROG, GOTESTDRIVEPROGChanged = EnvOrAndChanged("GOTESTDRIVEPROG", "")
 
 	// Used in envcmd.MkEnv and build ID computations.
 	GOARM64, goARM64Changed     = EnvOrAndChanged("GOARM64", buildcfg.DefaultGOARM64)
