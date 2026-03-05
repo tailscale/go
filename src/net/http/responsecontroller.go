@@ -6,6 +6,7 @@ package http
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"time"
@@ -136,6 +137,35 @@ func (c *ResponseController) EnableFullDuplex() error {
 			rw = t.Unwrap()
 		default:
 			return errNotSupported()
+		}
+	}
+}
+
+// SetWriteContextTailscale sets the context on the response's internal request
+// so that the responseWriteEnforcer (registered via SetResponseWriteEnforcer)
+// can see context values set by handler middleware.
+//
+// It returns the new *Request with the updated context, which callers can use
+// directly instead of separately calling r.WithContext(ctx):
+//
+//	r, _ = http.NewResponseController(w).SetWriteContextTailscale(ctx)
+//
+// Without this, handler middleware that calls r.WithContext(ctx) creates a new
+// *Request, but the response's internal w.req still points to the original
+// request with the old context. The enforcer receives w.req, so it cannot see
+// values like the cfgdb txTracker that middleware adds to the context.
+func (c *ResponseController) SetWriteContextTailscale(ctx context.Context) (*Request, error) {
+	rw := c.rw
+	for {
+		switch t := rw.(type) {
+		case interface {
+			SetWriteContextTailscale(context.Context) (*Request, error)
+		}:
+			return t.SetWriteContextTailscale(ctx)
+		case rwUnwrapper:
+			rw = t.Unwrap()
+		default:
+			return nil, errNotSupported()
 		}
 	}
 }

@@ -509,6 +509,22 @@ func (c *response) EnableFullDuplex() error {
 	return nil
 }
 
+// SetWriteContextTailscale sets the context on the response's internal request
+// so that the responseWriteEnforcer (registered via SetResponseWriteEnforcer)
+// can see context values set by handler middleware.
+//
+// It returns the new *Request with the updated context, which callers can use
+// directly instead of separately calling r.WithContext(ctx).
+//
+// Without this, handler middleware that calls r.WithContext(ctx) creates a new
+// *Request, but the response's internal w.req still points to the original
+// request with the old context. The enforcer receives w.req, so it cannot see
+// values like the cfgdb txTracker that middleware adds to the context.
+func (w *response) SetWriteContextTailscale(ctx context.Context) (*Request, error) {
+	w.req = w.req.WithContext(ctx)
+	return w.req, nil
+}
+
 // TrailerPrefix is a magic prefix for [ResponseWriter.Header] map keys
 // that, if present, signals that the map entry is actually for
 // the response trailers, and not the response headers. The prefix
