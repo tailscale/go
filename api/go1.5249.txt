@@ -1,0 +1,1 @@
+pkg runtime/debug, func TailscaleToolchainGitRev() (string, bool) #49

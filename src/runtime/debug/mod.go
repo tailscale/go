@@ -13,6 +13,16 @@ import (
 
 const tailscaleGitRev = `TAILSCALE_GIT_REV_TO_BE_REPLACED_AT_BUILD_TIME`
 
+// TailscaleToolchainGitRev reports the git revision of the Tailscale Go
+// toolchain, if known. CI and Nix replace the placeholder value at build
+// time via sed. See .github/workflows/build.yml.
+func TailscaleToolchainGitRev() (gitHash string, ok bool) {
+	if len(tailscaleGitRev) > 0 && tailscaleGitRev[0] != 'T' {
+		return tailscaleGitRev, true
+	}
+	return "", false
+}
+
 // exported from runtime.
 func modinfo() string
 
@@ -36,10 +46,10 @@ func ReadBuildInfo() (info *BuildInfo, ok bool) {
 	// awkwardness from the user.
 	bi.GoVersion = runtime.Version()
 
-	if len(tailscaleGitRev) > 0 && tailscaleGitRev[0] != 'T' {
+	if rev, ok := TailscaleToolchainGitRev(); ok {
 		bi.Settings = append(bi.Settings, BuildSetting{
 			Key:   "tailscale.toolchain.rev",
-			Value: tailscaleGitRev,
+			Value: rev,
 		})
 	}
 
