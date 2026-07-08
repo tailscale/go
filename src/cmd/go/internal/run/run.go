@@ -172,7 +172,7 @@ func runRun(ctx context.Context, cmd *base.Command, args []string) {
 	}
 
 	a1 := b.LinkAction(moduleLoader, work.ModeBuild, work.ModeBuild, p)
-	a1.CacheExecutable = true
+	a1.CacheExecutable = cfg.CacheBinary(true) // 'go run' caches binaries by default
 	a := &work.Action{Mode: "go run", Actor: work.ActorFunc(buildRunProgram), Args: cmdArgs, Deps: []*work.Action{a1}}
 	b.Do(ctx, a)
 }

@@ -925,6 +925,11 @@ func (b *Builder) LinkAction(s *modload.Loader, mode, depMode BuildMode, p *load
 		a := &Action{
 			Mode:    "link",
 			Package: p,
+			// Most commands do not store linked binaries in the build
+			// cache unless the -cachebinary flag asks for it. Commands
+			// that cache binaries by default ('go run', 'go tool',
+			// 'go doc') adjust CacheExecutable after LinkAction returns.
+			CacheExecutable: cfg.CacheBinary(false),
 		}
 
 		a1 := b.CompileAction(ModeBuild, depMode, p)

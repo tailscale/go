@@ -71,6 +71,8 @@ var (
 	BuildA                 bool     // -a flag
 	BuildBuildmode         string   // -buildmode flag
 	BuildBuildvcs          = "auto" // -buildvcs flag: "true", "false", or "auto"
+	BuildCacheBinary       bool     // -cachebinary flag
+	BuildCacheBinarySet    bool     // whether -cachebinary was set explicitly
 	BuildContext           = defaultContext()
 	BuildMod               string                  // -mod flag
 	BuildModExplicit       bool                    // whether -mod was set explicitly
@@ -112,6 +114,18 @@ var (
 	GOPATHChanged bool
 	CGOChanged    bool
 )
+
+// CacheBinary reports whether binaries produced by the linker should
+// be stored in the build cache, using def as the default when the
+// -cachebinary flag was not set explicitly. The default varies by
+// subcommand: 'go run' caches binaries by default; other commands
+// do not.
+func CacheBinary(def bool) bool {
+	if BuildCacheBinarySet {
+		return BuildCacheBinary
+	}
+	return def
+}
 
 func defaultContext() build.Context {
 	ctxt := build.Default

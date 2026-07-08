@@ -173,6 +173,18 @@
 //		Use -buildvcs=false to always omit version control information, or
 //		-buildvcs=true to error out if version control information is available but
 //		cannot be included due to a missing tool or ambiguous directory structure.
+//	-cachebinary
+//		Whether to store binaries produced by the linker in the build
+//		cache. This avoids relinking a binary when the same binary
+//		would be linked again, at the expense of a larger build cache.
+//		The default value depends on the subcommand: true for
+//		'go run' and false otherwise. For example, 'go test' does not
+//		cache the (usually ephemeral) test binary by default, but
+//		caching it can avoid repeated relinking when running the same
+//		test binary repeatedly with different flags, environment, or
+//		other test inputs, such as when test wrappers shard tests
+//		within a package across multiple machines sharing a common
+//		build cache with GOCACHEPROG.
 //	-compiler name
 //		name of compiler to use, as in runtime.Compiler (gccgo or gc).
 //	-gccgoflags '[pattern=]arg list'
