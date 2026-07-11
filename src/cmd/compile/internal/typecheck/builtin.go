@@ -111,6 +111,7 @@ var runtimeDecls = [...]struct {
 	{"ifaceeq", funcTag, 79},
 	{"efaceeq", funcTag, 79},
 	{"panicrangestate", funcTag, 80},
+	{"didRange", funcTag, 14},
 	{"deferrangefunc", funcTag, 12},
 	{"rand", funcTag, 81},
 	{"rand32", funcTag, 82},

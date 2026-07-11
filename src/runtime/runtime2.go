@@ -534,6 +534,9 @@ type g struct {
 	// Used by the execution tracer.
 	inMarkAssist bool
 	coroexit     bool // argument to coroswitch_m
+	// inDidRange indicates that this goroutine is currently running
+	// the DidRange hook, so nested range loops must not re-enter it.
+	inDidRange bool
 
 	raceignore      int8  // ignore race detection events
 	nocgocallback   bool  // whether disable callback from C

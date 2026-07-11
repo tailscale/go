@@ -34,6 +34,15 @@ func cheapComputableIndex(width int64) bool {
 	return false
 }
 
+// instrumentRange reports whether range loops in the current package
+// should report their iteration counts to the runtime.DidRange hook.
+// The runtime and its dependencies are excluded: their range loops can
+// run in contexts (during GC, stack growth, etc.) where calling an
+// arbitrary Go function variable is not safe.
+func instrumentRange() bool {
+	return !base.Flag.CompilingRuntime
+}
+
 // walkRange transforms various forms of ORANGE into
 // simpler forms.  The result must be assigned back to n.
 // Node n may also be modified in place, and may also be
@@ -75,6 +84,17 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 
 	var body []ir.Node
 	var init []ir.Node
+
+	// hcount counts the loop's iterations and hpot is the potential (max)
+	// number of iterations; both are reported to runtime.DidRange after the
+	// loop. hcount == nil means the loop is not instrumented.
+	var hcount *ir.Name
+	var hpot ir.Node
+	if instrumentRange() {
+		hcount = typecheck.TempAt(base.Pos, ir.CurFunc, types.Types[types.TINT])
+		init = append(init, ir.NewAssignStmt(base.Pos, hcount, nil))
+	}
+
 	switch k := t.Kind(); {
 	default:
 		base.Fatalf("walkRange")
@@ -89,6 +109,10 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 
 		init = append(init, ir.NewAssignStmt(base.Pos, hv1, nil))
 		init = append(init, ir.NewAssignStmt(base.Pos, hn, a))
+
+		if hcount != nil {
+			hpot = typecheck.Conv(hn, types.Types[types.TINT])
+		}
 
 		nfor.Cond = ir.NewBinaryExpr(base.Pos, ir.OLT, hv1, hn)
 		nfor.Post = ir.NewAssignStmt(base.Pos, hv1, ir.NewBinaryExpr(base.Pos, ir.OADD, hv1, ir.NewInt(base.Pos, 1)))
@@ -120,6 +144,10 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 
 		init = append(init, ir.NewAssignStmt(base.Pos, hv1, nil))
 		init = append(init, ir.NewAssignStmt(base.Pos, hn, ir.NewUnaryExpr(base.Pos, ir.OLEN, ha)))
+
+		if hcount != nil {
+			hpot = hn
+		}
 
 		nfor.Cond = ir.NewBinaryExpr(base.Pos, ir.OLT, hv1, hn)
 		nfor.Post = ir.NewAssignStmt(base.Pos, hv1, ir.NewBinaryExpr(base.Pos, ir.OADD, hv1, ir.NewInt(base.Pos, 1)))
@@ -245,6 +273,15 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 
 		hit := nrange.Prealloc
 		th := hit.Type()
+
+		if hcount != nil {
+			// The map was copied to a temp by order, so referencing
+			// it again for its length is safe.
+			hpotTemp := typecheck.TempAt(base.Pos, ir.CurFunc, types.Types[types.TINT])
+			init = append(init, ir.NewAssignStmt(base.Pos, hpotTemp, ir.NewUnaryExpr(base.Pos, ir.OLEN, ha)))
+			hpot = hpotTemp
+		}
+
 		// depends on layout of iterator struct.
 		// See cmd/compile/internal/reflectdata/map.go:MapIterType
 		keysym := th.Field(0).Sym
@@ -272,6 +309,10 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 	case k == types.TCHAN:
 		// order.stmt arranged for a copy of the channel variable.
 		ha := a
+
+		if hcount != nil {
+			hpot = ir.NewInt(base.Pos, -1)
+		}
 
 		hv1 := typecheck.TempAt(base.Pos, ir.CurFunc, t.Elem())
 		hv1.SetTypecheck(1)
@@ -314,6 +355,14 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 
 		// order.stmt arranged for a copy of the string variable.
 		ha := a
+
+		if hcount != nil {
+			// The potential iteration count for a string is its length
+			// in bytes, an upper bound on the number of runes.
+			hpotTemp := typecheck.TempAt(base.Pos, ir.CurFunc, types.Types[types.TINT])
+			init = append(init, ir.NewAssignStmt(base.Pos, hpotTemp, ir.NewUnaryExpr(base.Pos, ir.OLEN, ha)))
+			hpot = hpotTemp
+		}
 
 		hv1 := typecheck.TempAt(base.Pos, ir.CurFunc, types.Types[types.TINT])
 		hv1t := typecheck.TempAt(base.Pos, ir.CurFunc, types.Types[types.TINT])
@@ -378,11 +427,28 @@ func walkRange(nrange *ir.RangeStmt) ir.Node {
 	nfor.Post = typecheck.Stmt(nfor.Post)
 	typecheck.Stmts(body)
 	nfor.Body.Append(body...)
+	if hcount != nil {
+		// Count the iteration before running the user's loop body, so
+		// that iterations ended early by break are still counted. This
+		// is arithmetic on temps, not a call, so it is safe inside the
+		// slice case's no-calls window between the hu/hp assignments.
+		incr := ir.NewAssignStmt(base.Pos, hcount, ir.NewBinaryExpr(base.Pos, ir.OADD, hcount, ir.NewInt(base.Pos, 1)))
+		nfor.Body.Append(typecheck.Stmt(incr))
+	}
 	nfor.Body.Append(nrange.Body...)
 
 	var n ir.Node = nfor
 
 	n = walkStmt(n)
+
+	if hcount != nil {
+		// Report the completed loop to the runtime.DidRange hook. The
+		// call goes immediately after the loop in the same block, so
+		// break (including labeled break) still reaches it; return and
+		// goto skip it.
+		call := mkcallstmt("didRange", hpot, hcount)
+		n = ir.NewBlockStmt(nfor.Pos(), []ir.Node{n, call})
+	}
 
 	base.Pos = lno
 	return n
@@ -427,6 +493,12 @@ func rangeConvert(nrange *ir.RangeStmt, dst *types.Type, src, typeWord, srcRType
 // where == for keys of map m is reflexive.
 func isMapClear(n *ir.RangeStmt) bool {
 	if base.Flag.N != 0 || base.Flag.Cfg.Instrumenting {
+		return false
+	}
+	if instrumentRange() {
+		// Keep the loop so runtime.DidRange sees exact iteration counts.
+		// This function is also called from order, which must agree with
+		// walk about whether the optimization applies.
 		return false
 	}
 
@@ -495,6 +567,10 @@ func mapClear(m, rtyp ir.Node) ir.Node {
 // Parameters are as in walkRange: "for v1, v2 = range a".
 func arrayRangeClear(loop *ir.RangeStmt, v1, v2, a ir.Node) ir.Node {
 	if base.Flag.N != 0 || base.Flag.Cfg.Instrumenting {
+		return nil
+	}
+	if instrumentRange() {
+		// Keep the loop so runtime.DidRange sees exact iteration counts.
 		return nil
 	}
 

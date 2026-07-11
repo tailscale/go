@@ -129,6 +129,9 @@ func efaceeq(typ *uintptr, x, y unsafe.Pointer) (ret bool)
 // panic for various rangefunc iterator errors
 func panicrangestate(state int)
 
+// range loop instrumentation hook
+func didRange(potentialSize, iterations int)
+
 // defer in range over func
 func deferrangefunc() interface{}
 

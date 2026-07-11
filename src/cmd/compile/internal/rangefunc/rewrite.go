@@ -571,6 +571,7 @@ type rewriter struct {
 	nextVar          types2.Object
 	defers           types2.Object
 	stateVarCount    int // stateVars are referenced from their respective loops
+	iterVarCount     int // iterVars are referenced from their respective loops
 	bodyClosureCount int // to help the debugger, the closures generated for loop bodies get names
 
 	rangefuncBodyClosures map[*syntax.FuncLit]bool
@@ -587,6 +588,8 @@ type forLoop struct {
 	nfor         *syntax.ForStmt // actual syntax
 	stateVar     *types2.Var     // #state variable for this loop
 	stateVarDecl *syntax.VarDecl
+	iterVar      *types2.Var // #iters variable counting this loop's iterations
+	iterVarDecl  *syntax.VarDecl
 	depth        int // outermost loop has depth 1, otherwise depth = depth(parent)+1
 
 	checkRet      bool     // add check for "return" after loop
@@ -647,6 +650,13 @@ func rewriteFunc(pkg *types2.Package, info *types2.Info, typ *syntax.FuncType, b
 // checkFuncMisuse reports whether to check for misuse of iterator callbacks functions.
 func (r *rewriter) checkFuncMisuse() bool {
 	return base.Debug.RangeFuncCheck != 0
+}
+
+// instrumentRange reports whether range-over-func loops in the current
+// package should report their iteration counts to the runtime.DidRange hook.
+// The runtime and its dependencies are excluded.
+func instrumentRange() bool {
+	return !base.Flag.CompilingRuntime
 }
 
 // inspect is a callback for syntax.Inspect that drives the actual rewriting.
@@ -725,6 +735,10 @@ func (r *rewriter) startLoop(loop *forLoop) {
 		// declare the state flag for this loop's body
 		loop.stateVar, loop.stateVarDecl = r.stateVar(loop.nfor.Pos())
 	}
+	if instrumentRange() {
+		// declare the iteration counter for this loop's body
+		loop.iterVar, loop.iterVarDecl = r.iterCountVar(loop.nfor.Pos())
+	}
 }
 
 // editStmt returns the replacement for the statement x,
@@ -785,6 +799,21 @@ func (r *rewriter) stateVar(pos syntax.Pos) (*types2.Var, *syntax.VarDecl) {
 	r.info.Defs[n] = obj
 
 	return obj, &syntax.VarDecl{NameList: []*syntax.Name{n}, Values: r.stateConst(abi.RF_READY)}
+}
+
+// iterCountVar returns a fresh #itersN variable, initialized to zero, that
+// counts a loop's iterations for the runtime.DidRange hook.
+func (r *rewriter) iterCountVar(pos syntax.Pos) (*types2.Var, *syntax.VarDecl) {
+	r.iterVarCount++
+
+	name := fmt.Sprintf("#iters%d", r.iterVarCount)
+	typ := r.int.Type()
+	obj := types2.NewVar(pos, r.pkg, name, typ)
+	n := syntax.NewName(pos, name)
+	setValueType(n, typ)
+	r.info.Defs[n] = obj
+
+	return obj, &syntax.VarDecl{NameList: []*syntax.Name{n}, Values: r.intConst(0)}
 }
 
 // editReturn returns the replacement for the return statement x.
@@ -1086,8 +1115,29 @@ func (r *rewriter) endLoop(loop *forLoop) {
 		block.List = append(block.List, stateVarDecl)
 	}
 
+	// declare the iteration counter, referenced by the loop body closure
+	if instrumentRange() {
+		iterVarDecl := &syntax.DeclStmt{DeclList: []syntax.Decl{loop.iterVarDecl}}
+		setPos(iterVarDecl, start)
+		block.List = append(block.List, iterVarDecl)
+	}
+
 	// iteratorFunc(bodyFunc)
 	block.List = append(block.List, cloDecl, call)
+
+	if instrumentRange() {
+		// runtime.didRange(-1, #itersN)
+		// This runs before the misuse checks and the #next dispatch, so
+		// loops exited by break or return still report their counts.
+		didCall := &syntax.CallExpr{
+			Fun:     runtimeSym(r.info, "didRange"),
+			ArgList: []syntax.Expr{r.intConst(-1), r.useObj(loop.iterVar)},
+		}
+		setValueType(didCall, nil) // no result type
+		didStmt := &syntax.ExprStmt{X: didCall}
+		setPos(didStmt, end)
+		block.List = append(block.List, didStmt)
+	}
 
 	if r.checkFuncMisuse() {
 		// iteratorFunc has exited, check for swallowed panic, and set body state to abi.RF_EXHAUSTED
@@ -1118,6 +1168,13 @@ func (r *rewriter) cond(op syntax.Operator, x, y syntax.Expr) *syntax.Operation 
 	tv.SetIsValue()
 	cond.SetTypeInfo(tv)
 	return cond
+}
+
+// add returns the expression x + y, typed as int.
+func (r *rewriter) add(x, y syntax.Expr) *syntax.Operation {
+	op := &syntax.Operation{Op: syntax.Add, X: x, Y: y}
+	setValueType(op, r.int.Type())
+	return op
 }
 
 func (r *rewriter) setState(val abi.RF_State, pos syntax.Pos) *syntax.AssignStmt {
@@ -1209,6 +1266,18 @@ func (r *rewriter) bodyFunc(body []syntax.Stmt, lhs []syntax.Expr, def bool, fty
 		bodyFunc.Body.List = append(bodyFunc.Body.List, tmpDecl)
 		bodyFunc.Body.List = append(bodyFunc.Body.List, r.setState(abi.RF_PANIC, start))
 		bodyFunc.Body.List = append(bodyFunc.Body.List, r.assertReady(start, tmpState))
+	}
+
+	if instrumentRange() {
+		// #itersN = #itersN + 1
+		// Counted before the body runs, so iterations ended early by
+		// break (or return) are still counted.
+		inc := &syntax.AssignStmt{
+			Lhs: r.useObj(loop.iterVar),
+			Rhs: r.add(r.useObj(loop.iterVar), r.intConst(1)),
+		}
+		setPos(inc, start)
+		bodyFunc.Body.List = append(bodyFunc.Body.List, inc)
 	}
 
 	// Original loop body (already rewritten by editStmt during inspect).
@@ -1498,6 +1567,10 @@ var runtimePkg = func() *types2.Package {
 
 	// func panicrangestate()
 	obj = types2.NewFunc(nopos, pkg, "panicrangestate", types2.NewSignatureType(nil, nil, nil, types2.NewTuple(types2.NewParam(nopos, pkg, "state", intType)), nil, false))
+	pkg.Scope().Insert(obj)
+
+	// func didRange(potentialSize, iterations int)
+	obj = types2.NewFunc(nopos, pkg, "didRange", types2.NewSignatureType(nil, nil, nil, types2.NewTuple(types2.NewParam(nopos, pkg, "potentialSize", intType), types2.NewParam(nopos, pkg, "iterations", intType)), nil, false))
 	pkg.Scope().Insert(obj)
 
 	return pkg
