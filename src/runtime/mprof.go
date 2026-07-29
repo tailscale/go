@@ -13,6 +13,7 @@ import (
 	"internal/profilerecord"
 	"internal/runtime/atomic"
 	"internal/runtime/sys"
+	"internal/stringslite"
 	"unsafe"
 )
 
@@ -1268,6 +1269,10 @@ var goroutineProfile = struct {
 	offset  atomic.Int64
 	records []profilerecord.StackRecord
 	labels  []unsafe.Pointer
+	// debug, if non-nil, receives unaggregated per-goroutine records
+	// (including header metadata) instead of records and labels.
+	// It is used for the debug=2 text form of the goroutine profile.
+	debug []profilerecord.GoroutineRecord
 }{
 	sema: 1,
 }
@@ -1327,7 +1332,7 @@ func goroutineLeakProfileWithLabelsConcurrent(p []profilerecord.StackRecord, lab
 	var offset int
 	forEachGRace(func(gp1 *g) {
 		if readgstatus(gp1)&^_Gscan == _Gleaked {
-			systemstack(func() { saveg(^uintptr(0), ^uintptr(0), gp1, &p[offset], pcbuf) })
+			systemstack(func() { saveg(^uintptr(0), ^uintptr(0), gp1, &p[offset].Stack, pcbuf) })
 			if labels != nil {
 				labels[offset] = gp1.labels
 			}
@@ -1343,7 +1348,30 @@ func goroutineLeakProfileWithLabelsConcurrent(p []profilerecord.StackRecord, lab
 }
 
 func goroutineProfileWithLabelsConcurrent(p []profilerecord.StackRecord, labels []unsafe.Pointer) (n int, ok bool) {
-	if len(p) == 0 {
+	return goroutineProfileConcurrent(p, labels, nil)
+}
+
+// pprof_goroutineDebugProfile fills p with one record per user goroutine,
+// each carrying the stack and header metadata needed to render the classic
+// debug=2 text dump, without an extended stop-the-world. It follows the
+// size contract of runtime.GoroutineProfile: if len(p) is too small, it
+// returns the required count and false.
+//
+//go:linkname pprof_goroutineDebugProfile
+func pprof_goroutineDebugProfile(p []profilerecord.GoroutineRecord) (n int, ok bool) {
+	return goroutineProfileConcurrent(nil, nil, p)
+}
+
+// goroutineProfileConcurrent captures a consistent snapshot of the stacks
+// of all user goroutines while only briefly stopping the world. Exactly one
+// of p or debug must be non-nil: stacks (and, optionally, labels) go to p,
+// while unaggregated records with header metadata go to debug.
+func goroutineProfileConcurrent(p []profilerecord.StackRecord, labels []unsafe.Pointer, debug []profilerecord.GoroutineRecord) (n int, ok bool) {
+	size := len(p)
+	if debug != nil {
+		size = len(debug)
+	}
+	if size == 0 {
 		// An empty slice is obviously too small. Return a rough
 		// allocation estimate without bothering to STW. As long as
 		// this is close, then we'll only need to STW once (on the next
@@ -1370,7 +1398,7 @@ func goroutineProfileWithLabelsConcurrent(p []profilerecord.StackRecord, labels 
 	}
 	n += int(gcCleanups.running.Load())
 
-	if n > len(p) {
+	if n > size {
 		// There's not enough space in p to store the whole profile, so (per the
 		// contract of runtime.GoroutineProfile) we're not allowed to write to p
 		// at all and must return n, false.
@@ -1382,11 +1410,19 @@ func goroutineProfileWithLabelsConcurrent(p []profilerecord.StackRecord, labels 
 	// Save current goroutine.
 	sp := sys.GetCallerSP()
 	pc := sys.GetCallerPC()
-	systemstack(func() {
-		saveg(pc, sp, ourg, &p[0], pcbuf)
-	})
-	if labels != nil {
-		labels[0] = ourg.labels
+	if debug != nil {
+		r := &debug[0]
+		systemstack(func() {
+			r.Truncated = saveg(pc, sp, ourg, &r.Stack, pcbuf)
+		})
+		captureGoroutineHeader(ourg, r)
+	} else {
+		systemstack(func() {
+			saveg(pc, sp, ourg, &p[0].Stack, pcbuf)
+		})
+		if labels != nil {
+			labels[0] = ourg.labels
+		}
 	}
 	ourg.goroutineProfiled.Store(goroutineProfileSatisfied)
 	goroutineProfile.offset.Store(1)
@@ -1399,6 +1435,7 @@ func goroutineProfileWithLabelsConcurrent(p []profilerecord.StackRecord, labels 
 	goroutineProfile.active = true
 	goroutineProfile.records = p
 	goroutineProfile.labels = labels
+	goroutineProfile.debug = debug
 	startTheWorld(stw)
 
 	// Visit each goroutine that existed as of the startTheWorld call above.
@@ -1421,6 +1458,7 @@ func goroutineProfileWithLabelsConcurrent(p []profilerecord.StackRecord, labels 
 	goroutineProfile.active = false
 	goroutineProfile.records = nil
 	goroutineProfile.labels = nil
+	goroutineProfile.debug = nil
 	startTheWorld(stw)
 
 	// Restore the invariant that every goroutine struct in allgs has its
@@ -1537,10 +1575,14 @@ func doRecordGoroutineProfile(gp1 *g, pcbuf []uintptr) {
 
 	offset := int(goroutineProfile.offset.Add(1)) - 1
 
-	if offset >= len(goroutineProfile.records) {
+	size := len(goroutineProfile.records)
+	if goroutineProfile.debug != nil {
+		size = len(goroutineProfile.debug)
+	}
+	if offset >= size {
 		// Should be impossible, but better to return a truncated profile than
 		// to crash the entire process at this point. Instead, deal with it in
-		// goroutineProfileWithLabelsConcurrent where we have more context.
+		// goroutineProfileConcurrent where we have more context.
 		return
 	}
 
@@ -1552,11 +1594,70 @@ func doRecordGoroutineProfile(gp1 *g, pcbuf []uintptr) {
 	// set gp1.goroutineProfiled to goroutineProfileInProgress and so are still
 	// preventing it from being truly _Grunnable. So we'll use the system stack
 	// to avoid schedule delays.
-	systemstack(func() { saveg(^uintptr(0), ^uintptr(0), gp1, &goroutineProfile.records[offset], pcbuf) })
+	if debug := goroutineProfile.debug; debug != nil {
+		r := &debug[offset]
+		systemstack(func() { r.Truncated = saveg(^uintptr(0), ^uintptr(0), gp1, &r.Stack, pcbuf) })
+		captureGoroutineHeader(gp1, r)
+		return
+	}
+	systemstack(func() { saveg(^uintptr(0), ^uintptr(0), gp1, &goroutineProfile.records[offset].Stack, pcbuf) })
 
 	if goroutineProfile.labels != nil {
 		goroutineProfile.labels[offset] = gp1.labels
 	}
+}
+
+// captureGoroutineHeader records into r the metadata needed to render the
+// header line of gp's entry in a debug=2 goroutine dump. It mirrors the
+// fields printed by traceback.go:goroutineheader.
+//
+// The world may be running, but gp must be prevented from executing (via
+// the goroutineProfiled state machine), so its state is stable.
+func captureGoroutineHeader(gp *g, r *profilerecord.GoroutineRecord) {
+	status := readgstatus(gp) &^ _Gscan
+
+	var statusStr string
+	if status < uint32(len(gStatusStrings)) {
+		statusStr = gStatusStrings[status]
+	} else {
+		statusStr = "???"
+	}
+	if (status == _Gwaiting || status == _Gleaked) && gp.waitreason != waitReasonZero {
+		statusStr = gp.waitreason.String()
+	}
+	r.Status = statusStr
+	r.Leaked = status == _Gleaked
+	if bubble := gp.bubble; bubble != nil {
+		r.BubbleID = bubble.id
+		r.Durable = status == _Gwaiting &&
+			gp.waitreason.isIdleInSynctest() &&
+			!stringslite.HasSuffix(statusStr, "(durable)")
+	}
+	if (status == _Gwaiting || status == _Gsyscall) && gp.waitsince != 0 {
+		r.WaitMinutes = (nanotime() - gp.waitsince) / 60e9
+	}
+	r.Goid = gp.goid
+	r.ParentGoid = gp.parentGoid
+	r.Gopc = gp.gopc
+	r.LockedToThread = gp.lockedm != 0
+	r.Labels = gp.labels
+}
+
+// pprof_tracebackLabelsEnabled reports whether goroutine dumps should
+// include profiler labels, per the tracebacklabels GODEBUG setting.
+//
+//go:linkname pprof_tracebackLabelsEnabled
+func pprof_tracebackLabelsEnabled() bool {
+	return debug.tracebacklabels.Load() == 1
+}
+
+// pprof_goroutineDumpSTW reports whether the goroutinedumpstw GODEBUG
+// setting has requested the historical stop-the-world behavior for the
+// debug=2 goroutine profile.
+//
+//go:linkname pprof_goroutineDumpSTW
+func pprof_goroutineDumpSTW() bool {
+	return debug.goroutinedumpstw > 0
 }
 
 func goroutineProfileWithLabelsSync(p []profilerecord.StackRecord, labels []unsafe.Pointer) (n int, ok bool) {
@@ -1596,7 +1697,7 @@ func goroutineProfileWithLabelsSync(p []profilerecord.StackRecord, labels []unsa
 		sp := sys.GetCallerSP()
 		pc := sys.GetCallerPC()
 		systemstack(func() {
-			saveg(pc, sp, gp, &r[0], pcbuf)
+			saveg(pc, sp, gp, &r[0].Stack, pcbuf)
 		})
 		r = r[1:]
 
@@ -1621,7 +1722,7 @@ func goroutineProfileWithLabelsSync(p []profilerecord.StackRecord, labels []unsa
 			// The world is stopped, so it cannot use cgocall (which will be
 			// blocked at exitsyscall). Do it on the system stack so it won't
 			// call into the schedular (see traceback.go:cgoContextPCs).
-			systemstack(func() { saveg(^uintptr(0), ^uintptr(0), gp1, &r[0], pcbuf) })
+			systemstack(func() { saveg(^uintptr(0), ^uintptr(0), gp1, &r[0].Stack, pcbuf) })
 			if labels != nil {
 				lbl[0] = gp1.labels
 				lbl = lbl[1:]
@@ -1661,7 +1762,9 @@ func goroutineProfileInternal(p []profilerecord.StackRecord) (n int, ok bool) {
 	return goroutineProfileWithLabels(p, nil)
 }
 
-func saveg(pc, sp uintptr, gp *g, r *profilerecord.StackRecord, pcbuf []uintptr) {
+// saveg saves gp's stack into *stack. It reports whether the trace may have
+// been truncated by the profile stack depth limit.
+func saveg(pc, sp uintptr, gp *g, stack *[]uintptr, pcbuf []uintptr) bool {
 	// To reduce memory usage, we want to allocate a r.Stack that is just big
 	// enough to hold gp's stack trace. Naively we might achieve this by
 	// recording our stack trace into mp.profStack, and then allocating a
@@ -1679,8 +1782,9 @@ func saveg(pc, sp uintptr, gp *g, r *profilerecord.StackRecord, pcbuf []uintptr)
 	var u unwinder
 	u.initAt(pc, sp, 0, gp, unwindSilentErrors)
 	n := tracebackPCs(&u, 0, pcbuf)
-	r.Stack = make([]uintptr, n)
-	copy(r.Stack, pcbuf)
+	*stack = make([]uintptr, n)
+	copy(*stack, pcbuf)
+	return n == len(pcbuf)
 }
 
 // Stack formats a stack trace of the calling goroutine into buf

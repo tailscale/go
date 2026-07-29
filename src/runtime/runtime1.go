@@ -352,6 +352,11 @@ var debug struct {
 	// tracebacklabels controls the inclusion of goroutine labels in the
 	// goroutine status header line.
 	tracebacklabels atomic.Int32
+
+	// goroutinedumpstw restores the historical behavior of collecting
+	// the debug=2 goroutine profile via runtime.Stack, which stops the
+	// world for the duration of the entire dump.
+	goroutinedumpstw int32
 }
 
 var dbgvars = []*dbgVar{
@@ -369,6 +374,7 @@ var dbgvars = []*dbgVar{
 	{name: "gccheckmark", value: &debug.gccheckmark},
 	{name: "gcpacertrace", value: &debug.gcpacertrace},
 	{name: "gcshrinkstackoff", value: &debug.gcshrinkstackoff},
+	{name: "goroutinedumpstw", value: &debug.goroutinedumpstw},
 	{name: "gcstoptheworld", value: &debug.gcstoptheworld},
 	{name: "gctrace", value: &debug.gctrace},
 	{name: "harddecommit", value: &debug.harddecommit},

@@ -807,7 +807,23 @@ func writeGoroutineLeak(w io.Writer, debug int) error {
 	return writeRuntimeProfile(w, debug, "goroutineleak", pprof_goroutineLeakProfileWithLabels)
 }
 
+// writeGoroutineStacks writes the runtime.Stack-style debug=2 form of the
+// goroutine profile to w.
+//
+// It normally collects the dump using the concurrent goroutine profile
+// machinery, which only briefly stops the world. Setting
+// GODEBUG=goroutinedumpstw=1 restores the historical behavior of calling
+// runtime.Stack, which stops the world for the entire collection and
+// truncates the output at 64 MB, but prints function argument words and
+// does not limit stack depth.
 func writeGoroutineStacks(w io.Writer) error {
+	if pprof_goroutineDumpSTW() {
+		return writeGoroutineStacksSTW(w)
+	}
+	return writeGoroutineStacksConcurrent(w)
+}
+
+func writeGoroutineStacksSTW(w io.Writer) error {
 	// We don't know how big the buffer needs to be to collect
 	// all the goroutines. Start with 1 MB and try a few times, doubling each time.
 	// Give up and use a truncated trace if 64 MB is not enough.
@@ -826,6 +842,194 @@ func writeGoroutineStacks(w io.Writer) error {
 	}
 	_, err := w.Write(buf)
 	return err
+}
+
+func writeGoroutineStacksConcurrent(w io.Writer) error {
+	// Find out how many records there are (fetch with nil), allocate that
+	// many records, and get the data. There's a race—more records might be
+	// added between the two calls—so allocate a few extra records for
+	// safety and also try again if we're very unlucky. The loop should only
+	// execute one iteration in the common case.
+	var p []profilerecord.GoroutineRecord
+	n, _ := pprof_goroutineDebugProfile(nil)
+	for {
+		p = make([]profilerecord.GoroutineRecord, n+10)
+		var ok bool
+		n, ok = pprof_goroutineDebugProfile(p)
+		if ok {
+			p = p[:n]
+			break
+		}
+	}
+
+	b := bufio.NewWriter(w)
+	showLabels := pprof_tracebackLabelsEnabled()
+	for i := range p {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		printGoroutineRecord(b, &p[i], showLabels)
+	}
+	return b.Flush()
+}
+
+// printGoroutineRecord writes one goroutine's entry in a debug=2 goroutine
+// dump, in the same format as the runtime's traceback printer, except that
+// function argument words are printed as "(...)" because their values are
+// not captured by the goroutine profile.
+func printGoroutineRecord(b *bufio.Writer, r *profilerecord.GoroutineRecord, showLabels bool) {
+	fmt.Fprintf(b, "goroutine %d [%s", r.Goid, r.Status)
+	if r.Leaked {
+		b.WriteString(" (leaked)")
+	}
+	if r.Durable {
+		b.WriteString(" (durable)")
+	}
+	if r.WaitMinutes >= 1 {
+		fmt.Fprintf(b, ", %d minutes", r.WaitMinutes)
+	}
+	if r.LockedToThread {
+		b.WriteString(", locked to thread")
+	}
+	if r.BubbleID != 0 {
+		fmt.Fprintf(b, ", synctest bubble %d", r.BubbleID)
+	}
+	b.WriteString("]")
+	if showLabels && r.Labels != nil {
+		printGoroutineLabels(b, (*labelMap)(r.Labels))
+	}
+	b.WriteString(":\n")
+
+	frames := runtime.CallersFrames(r.Stack)
+	firstFrame := true
+	for {
+		frame, more := frames.Next()
+		if frame.Function == "" {
+			fmt.Fprintf(b, "%#x\n", frame.PC)
+		} else if showDumpFrame(frame.Function, firstFrame) {
+			firstFrame = false
+			b.WriteString(tracebackFuncName(frame.Function))
+			b.WriteString("(...)\n")
+			fmt.Fprintf(b, "\t%s:%d", frame.File, frame.Line)
+			// As in the runtime's traceback printer, physical frames get a
+			// +0x offset from the function entry; inlined frames (which
+			// have no Func) do not.
+			if frame.Func != nil && frame.PC > frame.Entry {
+				fmt.Fprintf(b, " +%#x", frame.PC-frame.Entry)
+			}
+			b.WriteByte('\n')
+		}
+		if !more {
+			break
+		}
+	}
+	if r.Truncated {
+		b.WriteString("...additional frames elided...\n")
+	}
+
+	// Show what created the goroutine, except for the main goroutine
+	// (goid 1), mirroring traceback.go:printcreatedby.
+	if r.Gopc != 0 && r.Goid != 1 {
+		frame, _ := runtime.CallersFrames([]uintptr{r.Gopc}).Next()
+		if frame.Function != "" {
+			b.WriteString("created by ")
+			b.WriteString(tracebackFuncName(frame.Function))
+			if r.ParentGoid != 0 {
+				fmt.Fprintf(b, " in goroutine %d", r.ParentGoid)
+			}
+			b.WriteByte('\n')
+			fmt.Fprintf(b, "\t%s:%d", frame.File, frame.Line)
+			if frame.Entry != 0 && r.Gopc > frame.Entry {
+				fmt.Fprintf(b, " +%#x", r.Gopc-frame.Entry)
+			}
+			b.WriteByte('\n')
+		}
+	}
+}
+
+// printGoroutineLabels writes the goroutine's profiler labels in the same
+// " {key: value, ...}" form as the runtime's goroutineheader.
+func printGoroutineLabels(b *bufio.Writer, lm *labelMap) {
+	if lm == nil || len(lm.List) == 0 {
+		return
+	}
+	b.WriteString(" {")
+	for i, kv := range lm.List {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		printMaybeQuoted(b, kv.Key)
+		b.WriteString(": ")
+		printMaybeQuoted(b, kv.Value)
+	}
+	b.WriteString("}")
+}
+
+// printMaybeQuoted quotes s only if it contains characters beyond the
+// unambiguous set, matching traceback.go:tracebackStringNeedsQuoting.
+func printMaybeQuoted(b *bufio.Writer, s string) {
+	for _, r := range s {
+		if !('a' <= r && r <= 'z' ||
+			'A' <= r && r <= 'Z' ||
+			'0' <= r && r <= '9' ||
+			r == '.' || r == '/' || r == '_') {
+			fmt.Fprintf(b, "%q", s)
+			return
+		}
+	}
+	b.WriteString(s)
+}
+
+// showDumpFrame reports whether a function should appear in a debug=2
+// goroutine dump, mirroring traceback.go:showfuncinfo at traceback level 1:
+// runtime-internal frames are hidden except for exported runtime functions
+// and a few special cases.
+func showDumpFrame(name string, firstFrame bool) bool {
+	if name == "runtime.gopanic" && !firstFrame {
+		return true
+	}
+	if name == "runtime.runFinalizers" || name == "runtime.runCleanups" {
+		return true
+	}
+	if !strings.Contains(name, ".") {
+		return false
+	}
+	return !strings.HasPrefix(name, "runtime.") || isExportedRuntime(name)
+}
+
+// isExportedRuntime reports whether name is an exported runtime function or
+// an exported method of an exported runtime type, as in
+// traceback.go:isExportedRuntime.
+func isExportedRuntime(name string) bool {
+	name, found := strings.CutPrefix(name, "runtime.")
+	if !found {
+		return false
+	}
+	rcvr := ""
+	if i := strings.LastIndexByte(name, '.'); i >= 0 {
+		rcvr = name[:i]
+		name = name[i+1:]
+		// Remove parentheses and star for pointer receivers.
+		if len(rcvr) >= 3 && rcvr[0] == '(' && rcvr[1] == '*' && rcvr[len(rcvr)-1] == ')' {
+			rcvr = rcvr[2 : len(rcvr)-1]
+		}
+	}
+	return len(name) > 0 && 'A' <= name[0] && name[0] <= 'Z' && (len(rcvr) == 0 || 'A' <= rcvr[0] && rcvr[0] <= 'Z')
+}
+
+// tracebackFuncName formats a function name the way the runtime's
+// traceback printer does: runtime.gopanic is shown as "panic", and the
+// type instantiation shape of a generic function is replaced by "[...]".
+func tracebackFuncName(name string) string {
+	if name == "runtime.gopanic" {
+		return "panic"
+	}
+	if i := strings.IndexByte(name, '['); i >= 0 {
+		if j := strings.LastIndexByte(name, ']'); j > i {
+			return name[:i] + "[...]" + name[j+1:]
+		}
+	}
+	return name
 }
 
 func writeRuntimeProfile(w io.Writer, debug int, name string, fetch func([]profilerecord.StackRecord, []unsafe.Pointer) (int, bool)) error {
@@ -1034,6 +1238,15 @@ func pprof_goroutineProfileWithLabels(p []profilerecord.StackRecord, labels []un
 
 //go:linkname pprof_goroutineLeakProfileWithLabels runtime.pprof_goroutineLeakProfileWithLabels
 func pprof_goroutineLeakProfileWithLabels(p []profilerecord.StackRecord, labels []unsafe.Pointer) (n int, ok bool)
+
+//go:linkname pprof_goroutineDebugProfile runtime.pprof_goroutineDebugProfile
+func pprof_goroutineDebugProfile(p []profilerecord.GoroutineRecord) (n int, ok bool)
+
+//go:linkname pprof_tracebackLabelsEnabled runtime.pprof_tracebackLabelsEnabled
+func pprof_tracebackLabelsEnabled() bool
+
+//go:linkname pprof_goroutineDumpSTW runtime.pprof_goroutineDumpSTW
+func pprof_goroutineDumpSTW() bool
 
 //go:linkname pprof_cyclesPerSecond runtime/pprof.runtime_cyclesPerSecond
 func pprof_cyclesPerSecond() int64
