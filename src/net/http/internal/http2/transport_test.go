@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -5650,4 +5651,100 @@ func testExtendedConnectReadFrameError(t *testing.T) {
 	if rt.err() == nil {
 		t.Fatalf("after connection closed: RoundTrip succeeded; want error")
 	}
+}
+
+// TestTransportRequestGoroutineExits verifies that the goroutine spawned to
+// write a request exits once the request has been fully sent, rather than
+// parking for the lifetime of the response stream. For clients with many
+// concurrent long-lived streams (long polls), a parked goroutine and its
+// stack per stream is a significant memory cost.
+func TestTransportRequestGoroutineExits(t *testing.T) {
+	synctest.Test(t, testTransportRequestGoroutineExits)
+}
+func testTransportRequestGoroutineExits(t *testing.T) {
+	tc := newTestClientConn(t)
+	tc.greet()
+
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+
+	tc.wantFrameType(FrameHeaders)
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:      rt.streamID(),
+		EndHeaders:    true,
+		EndStream:     false,
+		BlockFragment: tc.makeHeaderBlockFragment(":status", "200"),
+	})
+	rt.wantStatus(200)
+
+	// The request is fully sent and the response is streaming with no
+	// end in sight. The request-writing goroutine should be gone.
+	synctest.Wait()
+	if n := requestWriteGoroutines(); n != 0 {
+		t.Errorf("got %d request-writing goroutines parked during long-lived response stream; want 0", n)
+	}
+
+	// The stream still works and still cleans up at END_STREAM.
+	tc.writeData(rt.streamID(), false, []byte("hello, "))
+	tc.writeData(rt.streamID(), true, []byte("world"))
+	rt.wantBody([]byte("hello, world"))
+}
+
+// requestWriteGoroutines returns the number of goroutines in
+// clientStream.doRequest or clientStream.writeRequest.
+func requestWriteGoroutines() int {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+	n := 0
+	for g := range strings.SplitSeq(string(buf), "\n\n") {
+		if strings.Contains(g, ").writeRequest(") || strings.Contains(g, ").doRequest(") {
+			n++
+		}
+	}
+	return n
+}
+
+// TestTransportRequestGoroutineExitsRespHeaderTimeout is like
+// TestTransportRequestGoroutineExits, but with a ResponseHeaderTimeout
+// configured: the timeout is enforced by a timer rather than a parked
+// goroutine, and once response headers arrive the timer is disarmed and
+// must not fire even long after the timeout elapses.
+func TestTransportRequestGoroutineExitsRespHeaderTimeout(t *testing.T) {
+	synctest.Test(t, testTransportRequestGoroutineExitsRespHeaderTimeout)
+}
+func testTransportRequestGoroutineExitsRespHeaderTimeout(t *testing.T) {
+	const timeout = 1 * time.Second
+	tc := newTestClientConn(t, func(t1 *http.Transport) {
+		t1.ResponseHeaderTimeout = timeout
+	})
+	tc.greet()
+
+	req, _ := http.NewRequest("GET", "https://dummy.tld/", nil)
+	rt := tc.roundTrip(req)
+
+	tc.wantFrameType(FrameHeaders)
+
+	// The request-writing goroutine should be gone even before response
+	// headers arrive; the response header timeout is enforced by a timer.
+	synctest.Wait()
+	if n := requestWriteGoroutines(); n != 0 {
+		t.Errorf("got %d request-writing goroutines parked awaiting response headers; want 0", n)
+	}
+
+	// Response headers arrive within the timeout.
+	time.Sleep(timeout / 2)
+	tc.writeHeaders(HeadersFrameParam{
+		StreamID:      rt.streamID(),
+		EndHeaders:    true,
+		EndStream:     false,
+		BlockFragment: tc.makeHeaderBlockFragment(":status", "200"),
+	})
+	rt.wantStatus(200)
+
+	// Long after the response header timeout has elapsed, the
+	// still-streaming response must be unaffected.
+	time.Sleep(10 * timeout)
+	synctest.Wait()
+	tc.writeData(rt.streamID(), true, []byte("hello"))
+	rt.wantBody([]byte("hello"))
 }
