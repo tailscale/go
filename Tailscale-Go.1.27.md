@@ -104,5 +104,8 @@ commits.
 - [ ] Add `ts27` labels to the 13 carried issues; add `tsgo` label to
       [#141](https://github.com/tailscale/go/issues/141).
 - [ ] Push `tailscale.go1.27` and the tsgotest additions after review.
+- [x] 2026-07-30: merged upstream `release-branch.go1.27` (11 post-rc2
+      fixes, through commit `95ae6418f3`); toolchain rebuilt and
+      tsgotest passes.
 - [ ] Re-merge upstream `release-branch.go1.27` when go1.27.0 final is
-      tagged (branch is currently at go1.27rc2).
+      tagged (branch is currently at go1.27rc2 plus post-rc2 fixes).
