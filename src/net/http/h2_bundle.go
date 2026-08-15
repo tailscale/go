@@ -6858,6 +6858,15 @@ func (w *http2responseWriter) EnableFullDuplex() error {
 	return nil
 }
 
+func (w *http2responseWriter) SetWriteContextTailscale(ctx context.Context) (*Request, error) {
+	rws := w.rws
+	if rws == nil {
+		panic("SetWriteContextTailscale called after Handler finished")
+	}
+	rws.req = rws.req.WithContext(ctx)
+	return rws.req, nil
+}
+
 func (w *http2responseWriter) Flush() {
 	w.FlushError()
 }
