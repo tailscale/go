@@ -296,11 +296,7 @@ type Framer struct {
 	maxReadSize uint32
 	headerBuf   [frameHeaderLen]byte
 
-	// TODO: let getReadBuf be configurable, and use a less memory-pinning
-	// allocator in server.go to minimize memory pinned for many idle conns.
-	// Will probably also need to make frame invalidation have a hook too.
-	getReadBuf func(size uint32) []byte
-	readBuf    []byte // cache for default getReadBuf
+	readBuf []byte // cache for getReadBuf
 
 	maxWriteSize uint32 // zero means unlimited; TODO: implement
 
@@ -464,15 +460,25 @@ func NewFramer(w io.Writer, r io.Reader) *Framer {
 		debugReadLoggerf:  log.Printf,
 		debugWriteLoggerf: log.Printf,
 	}
-	fr.getReadBuf = func(size uint32) []byte {
-		if cap(fr.readBuf) >= int(size) {
-			return fr.readBuf[:size]
-		}
-		fr.readBuf = make([]byte, size)
-		return fr.readBuf
-	}
 	fr.SetMaxReadFrameSize(maxFrameSize)
 	return fr
+}
+
+// getReadBuf returns a buffer of the given size for ReadFrameForHeader
+// to read a frame payload into. The returned buffer is only used until
+// the next getReadBuf call, but the frame returned to the caller
+// aliases it, so the buffer must not be reused until the frame is
+// invalidated.
+//
+// TODO: use a less memory-pinning allocation strategy here to minimize
+// memory pinned for many idle conns. Will probably also need to make
+// frame invalidation have a hook too.
+func (fr *Framer) getReadBuf(size uint32) []byte {
+	if cap(fr.readBuf) >= int(size) {
+		return fr.readBuf[:size]
+	}
+	fr.readBuf = make([]byte, size)
+	return fr.readBuf
 }
 
 // SetMaxReadFrameSize sets the maximum size of a frame
