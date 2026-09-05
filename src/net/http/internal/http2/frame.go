@@ -5,6 +5,7 @@
 package http2
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -296,7 +297,16 @@ type Framer struct {
 	maxReadSize uint32
 	headerBuf   [frameHeaderLen]byte
 
-	readBuf []byte // cache for getReadBuf
+	// readBuf is the buffer most recently returned by getReadBuf,
+	// reused for subsequent frames that fit in it. releaseReadBuf
+	// drops it before blocking to wait for a new frame header, so
+	// idle connections don't pin a frame-sized buffer.
+	readBuf []byte
+	// readBufP, if non-nil, is the pooled container holding readBuf's
+	// array, to be returned to readBufPool by releaseReadBuf. It is
+	// nil when readBuf is small (under maxIdleReadBufCap) and not
+	// worth pooling.
+	readBufP *[]byte
 
 	maxWriteSize uint32 // zero means unlimited; TODO: implement
 
@@ -468,17 +478,72 @@ func NewFramer(w io.Writer, r io.Reader) *Framer {
 // to read a frame payload into. The returned buffer is only used until
 // the next getReadBuf call, but the frame returned to the caller
 // aliases it, so the buffer must not be reused until the frame is
-// invalidated.
-//
-// TODO: use a less memory-pinning allocation strategy here to minimize
-// memory pinned for many idle conns. Will probably also need to make
-// frame invalidation have a hook too.
+// invalidated. The buffer is cached in readBuf, and large buffers are
+// backed by readBufPool via readBufP.
 func (fr *Framer) getReadBuf(size uint32) []byte {
 	if cap(fr.readBuf) >= int(size) {
 		return fr.readBuf[:size]
 	}
+	if int(size) > maxIdleReadBufCap {
+		// Reuse the pooled container we already hold, if any;
+		// otherwise get one from the pool.
+		bp := fr.readBufP
+		if bp == nil {
+			bp, _ = readBufPool.Get().(*[]byte)
+			if bp == nil {
+				bp = new([]byte)
+			}
+		}
+		if cap(*bp) < int(size) {
+			*bp = make([]byte, size) // drop the old array (don't Put it back), so the pool converges toward large buffers
+		}
+		fr.readBufP = bp
+		fr.readBuf = (*bp)[:size]
+		return fr.readBuf
+	}
+	fr.readBufP = nil
 	fr.readBuf = make([]byte, size)
 	return fr.readBuf
+}
+
+// readBufPool pools the frame-sized buffers that back Framer.readBuf.
+// A Framer returns its buffer to the pool before blocking to wait for
+// a new frame header, often for minutes or hours on idle connections,
+// so that each idle connection does not pin a frame-sized buffer.
+var readBufPool sync.Pool
+
+// maxIdleReadBufCap is the largest readBuf capacity that a Framer keeps
+// while blocked waiting for a frame header to arrive. It is large
+// enough for control frames and small HEADERS frames, so that only
+// connections receiving larger frames pay for the buffer pooling.
+const maxIdleReadBufCap = 1024
+
+// releaseReadBuf invalidates the frame returned by the previous read
+// and, if the read buffer came from readBufPool, returns it to the
+// pool. It is called before blocking to wait for a new frame header.
+func (fr *Framer) releaseReadBuf() {
+	if fr.readBufP == nil {
+		return
+	}
+	if br, ok := fr.r.(*bufio.Reader); ok && br.Buffered() > 0 {
+		// More frame data is already buffered: we are not about to
+		// block, and the buffer is about to be needed again.
+		return
+	}
+	fr.invalidateLastFrame()
+	*fr.readBufP = fr.readBuf[:0]
+	readBufPool.Put(fr.readBufP)
+	fr.readBufP = nil
+	fr.readBuf = nil
+}
+
+// invalidateLastFrame invalidates the frame returned by the previous
+// ReadFrameForHeader call, if any.
+func (fr *Framer) invalidateLastFrame() {
+	if fr.lastFrame != nil {
+		fr.lastFrame.invalidate()
+		fr.lastFrame = nil
+	}
 }
 
 // SetMaxReadFrameSize sets the maximum size of a frame
@@ -549,9 +614,7 @@ func (fr *Framer) ReadFrameHeader() (FrameHeader, error) {
 // It behaves identically to ReadFrame, other than not checking the maximum
 // frame size.
 func (fr *Framer) ReadFrameForHeader(fh FrameHeader) (Frame, error) {
-	if fr.lastFrame != nil {
-		fr.lastFrame.invalidate()
-	}
+	fr.invalidateLastFrame()
 	payload := fr.getReadBuf(fh.Length)
 	if _, err := io.ReadFull(fr.r, payload); err != nil {
 		if fh == invalidHTTP1LookingFrameHeader() {
@@ -587,6 +650,10 @@ func (fr *Framer) ReadFrameForHeader(fh FrameHeader) (Frame, error) {
 // If ReadFrame returns an error and a non-nil Frame, the Frame's StreamID
 // indicates the stream responsible for the error.
 func (fr *Framer) ReadFrame() (Frame, error) {
+	// The previous frame is invalid as of this call, so don't pin a
+	// frame-sized read buffer while waiting, possibly for a long time,
+	// for the next frame to arrive.
+	fr.releaseReadBuf()
 	fh, err := fr.ReadFrameHeader()
 	if err != nil {
 		return nil, err
