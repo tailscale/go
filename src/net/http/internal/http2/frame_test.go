@@ -1723,3 +1723,45 @@ func TestFramerReadBufReleasedOnReadError(t *testing.T) {
 		t.Error("accessing previous frame's Data after failed ReadFrame did not panic")
 	}
 }
+
+func TestFramerWriteBufReleased(t *testing.T) {
+	fr, buf := testFramer()
+	if err := fr.WriteData(1, false, make([]byte, 2*maxIdleWriteBufCap)); err != nil {
+		t.Fatal(err)
+	}
+	if fr.wbuf != nil || fr.wbufP != nil {
+		t.Errorf("after large write: wbuf = %v (cap %d), wbufP = %v; want both released",
+			fr.wbuf != nil, cap(fr.wbuf), fr.wbufP != nil)
+	}
+
+	// Subsequent writes still produce well-formed frames.
+	if err := fr.WritePing(false, [8]byte{1, 2, 3, 4, 5, 6, 7, 8}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fr.ReadFrame(); err != nil { // the DATA frame
+		t.Fatal(err)
+	}
+	f, err := fr.ReadFrame()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.(*PingFrame); !ok {
+		t.Errorf("second frame = %T, want *PingFrame", f)
+	}
+	_ = buf
+}
+
+func TestFramerWriteBufSmallKept(t *testing.T) {
+	fr, _ := testFramer()
+	fr.wbuf = make([]byte, 0, 64) // small buffer stays attached across writes
+	if err := fr.WritePing(false, [8]byte{}); err != nil {
+		t.Fatal(err)
+	}
+	if fr.wbuf == nil || cap(fr.wbuf) != 64 {
+		t.Errorf("after small write: cap(wbuf) = %d (nil=%v), want the seeded 64-byte buffer kept",
+			cap(fr.wbuf), fr.wbuf == nil)
+	}
+	if fr.wbufP != nil {
+		t.Error("after small write: wbufP != nil, want nil")
+	}
+}

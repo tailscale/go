@@ -310,8 +310,16 @@ type Framer struct {
 
 	maxWriteSize uint32 // zero means unlimited; TODO: implement
 
-	w    io.Writer
+	w io.Writer
+	// wbuf is the frame currently being written, from startWrite's
+	// header through endWrite backfilling the length and writing it
+	// out. endWrite releases large buffers to writeBufPool so that
+	// idle connections don't pin a frame-sized buffer.
 	wbuf []byte
+	// wbufP, if non-nil, is the pooled container holding wbuf's array,
+	// to be returned to writeBufPool by endWrite. It is nil when wbuf
+	// is small (under maxIdleWriteBufCap) and not worth pooling.
+	wbufP *[]byte
 
 	// AllowIllegalWrites permits the Framer's Write methods to
 	// write frames that do not conform to the HTTP/2 spec. This
@@ -372,7 +380,27 @@ func (fr *Framer) maxHeaderValueCount() int {
 	return fr.MaxHeaderValueCount
 }
 
+// writeBufPool pools the frame-sized buffers that back Framer.wbuf.
+// endWrite returns the buffer to the pool once the frame has been
+// written out, so that idle connections don't each pin a buffer sized
+// by the last frame they wrote.
+var writeBufPool sync.Pool
+
+// maxIdleWriteBufCap is the largest wbuf capacity that a Framer keeps
+// between frame writes. It is large enough for control frames and
+// small HEADERS frames, so that only connections writing larger frames
+// pay for the buffer pooling.
+const maxIdleWriteBufCap = 1024
+
 func (f *Framer) startWrite(ftype FrameType, flags Flags, streamID uint32) {
+	if f.wbuf == nil {
+		// endWrite released the previous buffer; start with a pooled
+		// one if available. Appends below grow it as needed.
+		if bp, _ := writeBufPool.Get().(*[]byte); bp != nil {
+			f.wbufP = bp
+			f.wbuf = (*bp)[:0]
+		}
+	}
 	// Write the FrameHeader.
 	f.wbuf = append(f.wbuf[:0],
 		0, // 3 bytes of length, filled in endWrite
@@ -405,7 +433,29 @@ func (f *Framer) endWrite() error {
 	if err == nil && n != len(f.wbuf) {
 		err = io.ErrShortWrite
 	}
+	f.releaseWriteBuf()
 	return err
+}
+
+// releaseWriteBuf returns a large wbuf, whose frame has been written
+// out, to writeBufPool, so that a connection idle between writes does
+// not pin a frame-sized buffer. Small buffers stay attached to the
+// Framer.
+func (f *Framer) releaseWriteBuf() {
+	if cap(f.wbuf) <= maxIdleWriteBufCap {
+		return
+	}
+	bp := f.wbufP
+	if bp == nil {
+		bp = new([]byte)
+	}
+	// If appends outgrew a pooled array, the container is recycled
+	// with the new larger array and the old one is dropped, so the
+	// pool converges toward large buffers.
+	*bp = f.wbuf[:0]
+	writeBufPool.Put(bp)
+	f.wbufP = nil
+	f.wbuf = nil
 }
 
 func (f *Framer) logWrite() {
