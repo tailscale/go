@@ -33,6 +33,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"internal/synctest"
 	"io"
 	"log"
 	"math"
@@ -103,10 +104,6 @@ var (
 type Server struct {
 	mu          sync.Mutex
 	activeConns map[*serverConn]struct{}
-
-	// Pool of error channels. This is per-Server rather than global
-	// because channels can't be reused across synctest bubbles.
-	errChanPool sync.Pool
 }
 
 func (s *Server) registerConn(sc *serverConn) {
@@ -138,30 +135,33 @@ func (s *Server) startGracefulShutdown() {
 	s.mu.Unlock()
 }
 
-// Global error channel pool used for uninitialized Servers.
-// We use a per-Server pool when possible to avoid using channels across synctest bubbles.
+// errChanPool is a pool of reusable channels for reporting the result
+// of a blocking frame write.
+//
+// The pool is not used inside synctest bubbles, since a channel created
+// in one bubble can't be used from another bubble or from outside a
+// bubble, and sync.Pool is not bubble-aware.
 var errChanPool = sync.Pool{
 	New: func() any { return make(chan error, 1) },
 }
 
-func (s *Server) getErrChan() chan error {
-	if s == nil {
-		return errChanPool.Get().(chan error) // Server used without calling ConfigureServer
+func getErrChan() chan error {
+	if synctest.IsInBubble() {
+		// Channels can't be shared across synctest bubbles.
+		// Skip the pool; allocation cost is irrelevant in tests.
+		return make(chan error, 1)
 	}
-	return s.errChanPool.Get().(chan error)
+	return errChanPool.Get().(chan error)
 }
 
-func (s *Server) putErrChan(ch chan error) {
-	if s == nil {
-		errChanPool.Put(ch) // Server used without calling ConfigureServer
-		return
+func putErrChan(ch chan error) {
+	if !synctest.IsInBubble() {
+		errChanPool.Put(ch)
 	}
-	s.errChanPool.Put(ch)
 }
 
 func (s *Server) Configure(conf ServerConfig, tcfg *tls.Config) error {
 	s.activeConns = make(map[*serverConn]struct{})
-	s.errChanPool = sync.Pool{New: func() any { return make(chan error, 1) }}
 
 	if tcfg.CipherSuites != nil && tcfg.MinVersion < tls.VersionTLS13 {
 		// If they already provided a TLS 1.0–1.2 CipherSuite list, return an
@@ -321,7 +321,19 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 	if conf.CountError != nil {
 		fr.countError = conf.CountError
 	}
-	fr.ReadMetaHeaders = hpack.NewDecoder(uint32(conf.MaxDecoderHeaderTableSize), nil)
+	// A decoder table size below the initial 4096 (RFC 7540, Section 6.5.2)
+	// can't be applied immediately: the client may keep using the initial
+	// size until it processes our SETTINGS frame (RFC 7540, Section 6.5.3),
+	// and it signals the reduction with a dynamic table size update at the
+	// beginning of the first header block following the settings
+	// acknowledgment (RFC 7541, Section 4.2). Start at the initial size and
+	// lower it when the client acknowledges our SETTINGS. See processSettings.
+	decoderTableSize := uint32(conf.MaxDecoderHeaderTableSize)
+	if decoderTableSize < initialHeaderTableSize {
+		sc.pendingDecoderTableSize = decoderTableSize
+		decoderTableSize = initialHeaderTableSize
+	}
+	fr.ReadMetaHeaders = hpack.NewDecoder(decoderTableSize, nil)
 	fr.MaxHeaderListSize = sc.maxHeaderListSize()
 	fr.MaxHeaderValueCount = sc.hs.MaxHeaderValueCount()
 	fr.SetMaxReadFrameSize(uint32(conf.MaxReadFrameSize))
@@ -443,6 +455,7 @@ type serverConn struct {
 	sawFirstSettings            bool // got the initial SETTINGS frame after the preface
 	needToSendSettingsAck       bool
 	unackedSettings             int    // how many SETTINGS have we sent without ACKs?
+	pendingDecoderTableSize     uint32 // if non-zero, HPACK decoder table size to apply on SETTINGS ack
 	queuedControlFrames         int    // control frames in the writeSched queue
 	clientMaxStreams            uint32 // SETTINGS_MAX_CONCURRENT_STREAMS from client (our PUSH_PROMISE limit)
 	advMaxStreams               uint32 // our SETTINGS_MAX_CONCURRENT_STREAMS advertised the client
@@ -1009,7 +1022,7 @@ var writeDataPool = sync.Pool{
 // writeDataFromHandler writes DATA response frames from a handler on
 // the given stream.
 func (sc *serverConn) writeDataFromHandler(stream *stream, data []byte, endStream bool) error {
-	ch := sc.srv.getErrChan()
+	ch := getErrChan()
 	writeArg := writeDataPool.Get().(*writeData)
 	*writeArg = writeData{stream.id, data, endStream}
 	err := sc.writeFrameFromHandler(FrameWriteRequest{
@@ -1041,7 +1054,7 @@ func (sc *serverConn) writeDataFromHandler(stream *stream, data []byte, endStrea
 			return errStreamClosed
 		}
 	}
-	sc.srv.putErrChan(ch)
+	putErrChan(ch)
 	if frameWriteDone {
 		writeDataPool.Put(writeArg)
 	}
@@ -1613,6 +1626,17 @@ func (sc *serverConn) processSettings(f *SettingsFrame) error {
 			// The spec doesn't mention this case, but
 			// hang up on them anyway.
 			return sc.countError("ack_mystery", ConnectionError(ErrCodeProtocol))
+		}
+		if sc.pendingDecoderTableSize != 0 {
+			// The client has acknowledged our SETTINGS, so all header
+			// blocks it sends from now on were encoded with knowledge
+			// of our lower HEADER_TABLE_SIZE. It is now safe to apply
+			// the configured size to the decoder. The read goroutine
+			// is parked until readMore is called, so mutating the
+			// decoder here is race-free.
+			sc.framer.ReadMetaHeaders.SetAllowedMaxDynamicTableSize(sc.pendingDecoderTableSize)
+			sc.framer.ReadMetaHeaders.SetMaxDynamicTableSize(sc.pendingDecoderTableSize)
+			sc.pendingDecoderTableSize = 0
 		}
 		return nil
 	}
@@ -2343,7 +2367,7 @@ func (sc *serverConn) writeHeaders(st *stream, headerData *writeResHeaders) erro
 		// waiting for this frame to be written, so an http.Flush mid-handler
 		// writes out the correct value of keys, before a handler later potentially
 		// mutates it.
-		errc = sc.srv.getErrChan()
+		errc = getErrChan()
 	}
 	if err := sc.writeFrameFromHandler(FrameWriteRequest{
 		write:  headerData,
@@ -2355,7 +2379,7 @@ func (sc *serverConn) writeHeaders(st *stream, headerData *writeResHeaders) erro
 	if errc != nil {
 		select {
 		case err := <-errc:
-			sc.srv.putErrChan(errc)
+			putErrChan(errc)
 			return err
 		case <-sc.doneServing:
 			return errClientDisconnected
@@ -3061,7 +3085,7 @@ func (w *responseWriter) Push(target, method string, header Header) error {
 		method: method,
 		url:    u,
 		header: cloneHeader(header),
-		done:   sc.srv.getErrChan(),
+		done:   getErrChan(),
 	}
 
 	select {
@@ -3078,7 +3102,7 @@ func (w *responseWriter) Push(target, method string, header Header) error {
 	case <-st.cw:
 		return errStreamClosed
 	case err := <-msg.done:
-		sc.srv.putErrChan(msg.done)
+		putErrChan(msg.done)
 		return err
 	}
 }
