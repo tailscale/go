@@ -23,7 +23,6 @@ import (
 	"net/textproto"
 	"net/url"
 	urlpkg "net/url"
-	"os"
 	"path"
 	"runtime"
 	"slices"
@@ -711,6 +710,7 @@ type connReader struct {
 	cond    *sync.Cond
 	inRead  bool
 	aborted bool  // set true before conn.rwc deadline is set to past
+	probing bool  // set true during conn.serve's idle probe read, when a timeout is expected
 	remain  int64 // bytes remaining
 }
 
@@ -837,9 +837,26 @@ func (cr *connReader) abortPendingRead() {
 	cr.rwc.SetReadDeadline(time.Time{})
 }
 
+func (cr *connReader) setProbing(v bool) {
+	cr.lock()
+	cr.probing = v
+	cr.unlock()
+}
+
 func (cr *connReader) setReadLimit(remain int64) { cr.remain = remain }
 func (cr *connReader) setInfiniteReadLimit()     { cr.remain = maxInt64 }
 func (cr *connReader) hitReadLimit() bool        { return cr.remain <= 0 }
+
+// isNetTimeoutError reports whether err is a net.Error with Timeout()
+// == true, such as an error from an expired connection deadline.
+// It is used instead of checking errors.Is(err, os.ErrDeadlineExceeded)
+// because non-standard net.Conn implementations may return bespoke
+// timeout errors that don't wrap os.ErrDeadlineExceeded as net package
+// connections have since Go 1.15.
+func isNetTimeoutError(err error) bool {
+	ne, ok := errors.AsType[net.Error](err)
+	return ok && ne.Timeout()
+}
 
 // handleReadErrorLocked is called whenever a Read from the client returns a
 // non-nil error.
@@ -847,12 +864,22 @@ func (cr *connReader) hitReadLimit() bool        { return cr.remain <= 0 }
 // The provided non-nil err is almost always io.EOF or a "use of
 // closed network connection". In any case, the error is not
 // particularly interesting, except perhaps for debugging during
-// development. Any error means the connection is dead and we should
-// down its context.
+// development. Except for an expected timeout during the serve loop's
+// idle probe read, any error means the connection is dead and we
+// should down its context.
 //
 // The caller must hold connReader.mu.
-func (cr *connReader) handleReadErrorLocked(_ error) {
+func (cr *connReader) handleReadErrorLocked(err error) {
 	if cr.conn == nil {
+		return
+	}
+	// A timeout during conn.serve's idle probe read means only that the
+	// connection has gone idle; it is otherwise fine. In particular,
+	// don't cancel the connection-level context: it is the parent of
+	// every subsequent request's context on this connection, so
+	// canceling it would deliver already-canceled contexts to all
+	// future requests.
+	if cr.probing && isNetTimeoutError(err) {
 		return
 	}
 	cr.conn.cancelCtx()
@@ -2230,8 +2257,10 @@ func (c *conn) serve(ctx context.Context) {
 			shortDeadline = idleDeadline
 		}
 		c.rwc.SetReadDeadline(shortDeadline)
+		c.r.setProbing(true)
 		_, peekErr := c.bufr.Peek(4)
-		if errors.Is(peekErr, os.ErrDeadlineExceeded) && (idleDeadline.IsZero() || time.Now().Before(idleDeadline)) {
+		c.r.setProbing(false)
+		if isNetTimeoutError(peekErr) && (idleDeadline.IsZero() || time.Now().Before(idleDeadline)) {
 			c.rwc.SetReadDeadline(idleDeadline)
 			if c.bufr.Buffered() == 0 && c.bufw.Buffered() == 0 {
 				putBufioReader(c.bufr)
