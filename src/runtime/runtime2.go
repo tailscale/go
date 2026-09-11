@@ -547,6 +547,12 @@ type g struct {
 	ditWanted       bool // set if g wants to be executed with DIT enabled
 	syncSafePoint   bool // set if g is stopped at a synchronous safe point.
 	runningCleanups atomic.Bool
+	// The following three fields are Tailscale additions backing
+	// TailscaleReadStackStats. They fit in what would otherwise be
+	// alignment padding before sig, so they don't grow g.
+	tsMaxStackOrder uint8 // log2 of the largest stack ever allocated for this g, or 0 if never grown
+	tsStackGrowths  uint8 // number of stack growths (saturating)
+	tsStackShrinks  uint8 // number of stack shrinks (saturating)
 	sig             uint32
 	secret          int32 // current nesting of runtime/secret.Do calls.
 	writebuf        []byte

@@ -1207,6 +1207,10 @@ func newstack() {
 		throw("stack overflow")
 	}
 
+	if newsize > oldsize {
+		tailscaleNoteStackGrowth(gp, newsize)
+	}
+
 	// The goroutine must be executing in order to call newstack,
 	// so it must be Grunning (or Gscanrunning).
 	casgstatus(gp, _Grunning, _Gcopystack)
@@ -1331,6 +1335,9 @@ func shrinkstack(gp *g) {
 		print("shrinking stack ", oldsize, "->", newsize, "\n")
 	}
 
+	if gp.tsStackShrinks < ^uint8(0) {
+		gp.tsStackShrinks++
+	}
 	copystack(gp, newsize)
 }
 

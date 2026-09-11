@@ -5394,6 +5394,9 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 	newg.ancestors = saveAncestors(callergp)
 	newg.startpc = fn.fn
 	newg.runningCleanups.Store(false)
+	newg.tsMaxStackOrder = 0
+	newg.tsStackGrowths = 0
+	newg.tsStackShrinks = 0
 	if isSystemGoroutine(newg, false) {
 		sched.ngsys.Add(1)
 	} else {

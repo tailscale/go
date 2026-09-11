@@ -1,0 +1,7 @@
+pkg runtime, func TailscaleReadStackStats(*TailscaleStackStats) #184
+pkg runtime, type TailscaleStackStats struct #184
+pkg runtime, type TailscaleStackStats struct, Growths uint8 #184
+pkg runtime, type TailscaleStackStats struct, MaxSize uint64 #184
+pkg runtime, type TailscaleStackStats struct, Shrinks uint8 #184
+pkg runtime, type TailscaleStackStats struct, Size uint64 #184
+pkg runtime, type TailscaleStackStats struct, Used uint64 #184
