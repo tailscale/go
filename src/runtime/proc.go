@@ -2561,6 +2561,13 @@ func oneNewExtraM() {
 	// has the same effect.
 	sched.ngsys.Add(1)
 
+	// The goroutine's stack can grow while it runs cgo callbacks, and
+	// copystack records that in the stack size histogram, so record
+	// its initial size too or the histogram would go negative. Extra
+	// Ms are never destroyed, so there is no matching decrement. They
+	// are also rare, so the global counter is fine here.
+	tailscaleStackHistAdd(nil, gp.stack.hi-gp.stack.lo, 1)
+
 	// Add m to the extra list.
 	addExtraM(mp)
 }
@@ -4521,6 +4528,7 @@ func gdestroy(gp *g) {
 
 	casgstatus(gp, _Grunning, _Gdead)
 	gcController.addScannableStack(pp, -int64(gp.stack.hi-gp.stack.lo))
+	tailscaleStackHistAdd(pp, gp.stack.hi-gp.stack.lo, -1)
 	if isSystemGoroutine(gp, false) {
 		sched.ngsys.Add(-1)
 	}
@@ -5420,6 +5428,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr, parked bool, waitreaso
 		newg.tracking = true
 	}
 	gcController.addScannableStack(pp, int64(newg.stack.hi-newg.stack.lo))
+	tailscaleStackHistAdd(pp, newg.stack.hi-newg.stack.lo, 1)
 
 	// Get a goid and switch to runnable. This needs to happen under traceAcquire
 	// since it's a goroutine transition. See tracer invariants in trace.go.
@@ -6069,6 +6078,7 @@ func (pp *p) destroy() {
 	pp.cleanupsQueued = 0
 	sched.goroutinesCreated.Add(int64(pp.goroutinesCreated))
 	pp.goroutinesCreated = 0
+	tailscaleStackHistFlush(pp)
 	pp.xRegs.free()
 	pp.status = _Pdead
 }

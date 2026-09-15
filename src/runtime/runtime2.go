@@ -920,6 +920,20 @@ type p struct {
 	// scheduler ASAP (regardless of what G is running on it).
 	preempt bool
 
+	// tsStackHist counts live goroutines by stack size class. It is a
+	// Tailscale addition backing the
+	// /tailscale/sched/goroutines-by-stack-size:bytes metric; see the
+	// comment above tailscaleStackHistBaseOrder for the indexing and
+	// how the counts are used. It sits here, in the padding after
+	// preempt, so that it shares a cache line with goroutinesCreated,
+	// which newproc1 also writes, rather than dirtying one of its own.
+	// Only the P's owner writes it, and tailscaleStackHistRead reads
+	// it from other Ps without synchronization, like goroutinesCreated.
+	// The entries are int16 so that the whole array fits in that cache
+	// line; they are flushed to tailscaleStackHist once they drift
+	// tailscaleStackHistSlack from zero, so they cannot overflow.
+	tsStackHist [tailscaleStackHistLen]int16
+
 	// gcStopTime is the nanotime timestamp that this P last entered _Pgcstop.
 	gcStopTime int64
 

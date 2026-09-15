@@ -26,6 +26,10 @@ var (
 
 	sizeClassBuckets []float64
 	timeHistBuckets  []float64
+
+	// tailscaleStackSizeBuckets is a Tailscale addition; see
+	// tailscaleStackHistBuckets.
+	tailscaleStackSizeBuckets []float64
 )
 
 type metricData struct {
@@ -86,6 +90,7 @@ func initMetrics() {
 	sizeClassBuckets = append(sizeClassBuckets, float64Inf())
 
 	timeHistBuckets = timeHistogramMetricsBuckets()
+	tailscaleStackSizeBuckets = tailscaleStackHistBuckets()
 	metrics = map[string]metricData{
 		"/cgo/go-to-c-calls:calls": {
 			compute: func(_ *statAggregate, out *metricValue) {
@@ -543,6 +548,30 @@ func initMetrics() {
 			compute: func(_ *statAggregate, out *metricValue) {
 				out.kind = metricKindFloat64
 				out.scalar = float64bits(nsToSec(totalMutexWaitTimeNanos()))
+			},
+		},
+		"/tailscale/sched/goroutines-by-stack-size:bytes": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				hist := out.float64HistOrInit(tailscaleStackSizeBuckets)
+				tailscaleStackHistRead(hist.counts)
+			},
+		},
+		"/tailscale/sched/stacks/copied:bytes": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = tailscaleStackBytesCopied.Load()
+			},
+		},
+		"/tailscale/sched/stacks/growths:events": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = tailscaleStackGrowths.Load()
+			},
+		},
+		"/tailscale/sched/stacks/shrinks:events": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = tailscaleStackShrinks.Load()
 			},
 		},
 	}
