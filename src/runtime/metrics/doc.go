@@ -587,5 +587,38 @@ Below is the full list of supported metrics, ordered lexicographically.
 		is useful for identifying global changes in lock contention.
 		Collect a mutex or block profile using the runtime/pprof package
 		for more detailed contention data.
+
+	/tailscale/sched/goroutines-by-stack-size:bytes
+		Distribution of live goroutines by the current size of their
+		stacks, including runtime system goroutines. Stack sizes are
+		always powers of two, so each bucket but the last counts exactly
+		the goroutines whose stack size is the bucket's lower bound,
+		and the last bucket counts every goroutine with a larger stack.
+		The runtime updates these counts as goroutines are created,
+		exit, and have their stacks grown or shrunk, so reading this
+		metric does not visit every goroutine. The bucket counts sum
+		to approximately /sched/goroutines:goroutines. This metric is
+		specific to the Tailscale fork of Go.
+
+	/tailscale/sched/stacks/copied:bytes
+		Cumulative bytes of goroutine stack copied while growing or
+		shrinking stacks since program start. Every stack growth or
+		shrink copies the in-use part of the goroutine's stack to a new
+		allocation, so this measures the runtime's stack copying work.
+		This metric is specific to the Tailscale fork of Go.
+
+	/tailscale/sched/stacks/growths:events
+		Count of goroutine stack growths since program start. A stack
+		doubles in size when a function call would overflow it. Compared
+		with /tailscale/sched/stacks/shrinks:events this shows whether
+		stacks are repeatedly growing and then being shrunk back by the
+		garbage collector. This metric is specific to the Tailscale fork
+		of Go.
+
+	/tailscale/sched/stacks/shrinks:events
+		Count of goroutine stack shrinks since program start.
+		The garbage collector halves a goroutine's stack when it finds
+		the goroutine using less than a quarter of it. This metric is
+		specific to the Tailscale fork of Go.
 */
 package metrics

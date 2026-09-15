@@ -940,6 +940,7 @@ func copystack(gp *g, newsize uintptr) {
 	// It's also fine if we have no P, addScannableStack can deal with
 	// that case.
 	gcController.addScannableStack(getg().m.p.ptr(), int64(newsize)-int64(old.hi-old.lo))
+	tailscaleNoteStackCopy(getg().m.p.ptr(), old.hi-old.lo, newsize, used)
 
 	// allocate new stack
 	new := stackalloc(uint32(newsize))
