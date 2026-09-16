@@ -2104,6 +2104,9 @@ func (c *conn) serve(ctx context.Context) {
 		}
 	}
 
+	// HTTP/2 may outlive this goroutine, so it gets the uncancelable ctx.
+	connCtx := ctx
+
 	ctx, cancelCtx := context.WithCancel(ctx)
 	c.cancelCtx = cancelCtx
 	defer cancelCtx()
@@ -2117,7 +2120,7 @@ func (c *conn) serve(ctx context.Context) {
 
 	protos := c.server.protocols()
 	if c.tlsState == nil && protos.UnencryptedHTTP2() {
-		if c.maybeServeUnencryptedHTTP2(ctx) {
+		if c.maybeServeUnencryptedHTTP2(connCtx) {
 			return
 		}
 	}
