@@ -1,1 +1,2 @@
 pkg runtime, func TailscaleNumTimers() (int, int)  #141
+pkg time, method (*Timer) TailscaleRelease() bool #141

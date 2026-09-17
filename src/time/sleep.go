@@ -49,6 +49,11 @@ func stopTimer(*Timer) bool
 //go:linkname resetTimer
 func resetTimer(t *Timer, when, period int64) bool
 
+// releaseTimer is a Tailscale fork addition backing [Timer.TailscaleRelease].
+//
+//go:linkname releaseTimer
+func releaseTimer(*Timer) bool
+
 // Note: The runtime knows the layout of struct Timer, since newTimer allocates it.
 // The runtime also knows that Ticker and Timer have the same layout.
 // There are extra fields after the channel, reserved for the runtime
@@ -61,6 +66,36 @@ func resetTimer(t *Timer, when, period int64) bool
 type Timer struct {
 	C         <-chan Time
 	initTimer bool
+}
+
+// TailscaleRelease stops the timer like [Timer.Stop] and additionally
+// drops the timer's reference to the function passed to [AfterFunc],
+// so that the function and everything it refers to can be garbage
+// collected right away. A stopped timer can otherwise linger in the
+// runtime's timer heap, still holding its function, until the runtime
+// gets around to removing it, which can take until the timer's original
+// deadline. The result has the same meaning as Stop's: true if the call
+// stopped the timer, false if the timer had already expired or been
+// stopped.
+//
+// The timer must not be reused after TailscaleRelease. Reset panics, and
+// Stop and TailscaleRelease return false. For a func-based timer whose
+// function has already started, TailscaleRelease does not wait for the
+// function to complete, as with Stop. For a chan-based timer created with
+// [NewTimer], TailscaleRelease behaves like Stop, since such a timer holds
+// no user function.
+//
+// The number of stopped timers still occupying the runtime's timer heaps
+// is reported by the /tailscale/sched/timers/zombies/func:timers metric
+// in [runtime/metrics].
+//
+// This method exists only in the Tailscale fork of Go and must not be
+// used by code that needs to build with upstream Go.
+func (t *Timer) TailscaleRelease() bool {
+	if !t.initTimer {
+		panic("time: TailscaleRelease called on uninitialized Timer")
+	}
+	return releaseTimer(t)
 }
 
 // Stop prevents the [Timer] from firing.

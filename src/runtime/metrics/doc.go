@@ -620,5 +620,50 @@ Below is the full list of supported metrics, ordered lexicographically.
 		The garbage collector halves a goroutine's stack when it finds
 		the goroutine using less than a quarter of it. This metric is
 		specific to the Tailscale fork of Go.
+
+	/tailscale/sched/timers/tracked:timers
+		Count of timers currently in the scheduler's per-P timer heaps,
+		including zombies (see /tailscale/sched/timers/zombies:timers).
+		Channel timers created with time.NewTimer, time.After,
+		or time.NewTicker are only in a heap while some goroutine
+		is blocked receiving from their channel, so this undercounts
+		pending channel timers. Timers in testing/synctest bubbles are
+		not counted. This metric is specific to the Tailscale fork of
+		Go.
+
+	/tailscale/sched/timers/zombies/chan:timers
+		Count of zombie timers (see
+		/tailscale/sched/timers/zombies:timers) that are channel timers,
+		created with time.NewTimer, time.After, or time.NewTicker.
+		A channel timer becomes a zombie when it is stopped or when the
+		last goroutine blocked receiving from its channel is woken by
+		something else, which is what happens whenever a select with a
+		timer case finishes through another case. These zombies pin only
+		the timer and its channel and are cheap. This metric is specific
+		to the Tailscale fork of Go.
+
+	/tailscale/sched/timers/zombies/func:timers
+		Count of zombie timers (see
+		/tailscale/sched/timers/zombies:timers) that call a
+		function rather than send on a channel: timers created with
+		time.AfterFunc, plus runtime-internal timers such as network
+		poll deadlines. Each one keeps its function and everything the
+		function references reachable until the owning P removes it
+		from its heap, so this count measures how much a program stands
+		to gain from time.(*Timer).TailscaleRelease. This metric is
+		specific to the Tailscale fork of Go.
+
+	/tailscale/sched/timers/zombies:timers
+		Count of timers that have been stopped but are still in
+		a scheduler timer heap. Stopping a timer only marks it,
+		because the timer may be in another P's heap; the owning P
+		removes zombies lazily when one reaches the top of its heap,
+		when its deadline arrives, or when zombies exceed a quarter
+		of that heap. Until then a zombie remains reachable,
+		along with the function or channel it holds. This is the
+		sum of /tailscale/sched/timers/zombies/chan:timers and
+		/tailscale/sched/timers/zombies/func:timers, up to sampling
+		skew, since the counts are read without stopping the world.
+		This metric is specific to the Tailscale fork of Go.
 */
 package metrics

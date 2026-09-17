@@ -149,6 +149,13 @@ type timers struct {
 	// that are marked for removal.
 	zombies atomic.Int32
 
+	// zombieChans is the number of zombies that are channel timers
+	// (t.isChan set). It is a Tailscale addition maintained by
+	// ts.zombieAdd alongside zombies and exported through runtime/metrics
+	// so that zombies holding AfterFunc closures can be told apart from
+	// the cheap channel ones.
+	zombieChans atomic.Int32
+
 	// raceCtx is the race context used while executing timer functions.
 	raceCtx uintptr
 
@@ -300,7 +307,7 @@ func (t *timer) updateHeap() (updated bool) {
 	if t.state&timerZombie != 0 {
 		// Take timer out of heap.
 		t.state &^= timerHeaped | timerZombie | timerModified
-		ts.zombies.Add(-1)
+		ts.zombieAdd(t, -1)
 		ts.deleteMin()
 		return true
 	}
@@ -437,6 +444,10 @@ func resetTimer(t *timeTimer, when, period int64) bool {
 	if t.isFake && getg().bubble == nil {
 		fatal("reset of synctest timer from outside bubble")
 	}
+	if t.astate.Load()&timerReleased != 0 {
+		// Tailscale addition; see (*timer).release.
+		panic(plainError("time: Reset called on released Timer"))
+	}
 	return t.reset(when, period)
 }
 
@@ -486,7 +497,7 @@ func (t *timer) stop() bool {
 		t.state |= timerModified
 		if t.state&timerZombie == 0 {
 			t.state |= timerZombie
-			t.ts.zombies.Add(1)
+			t.ts.zombieAdd(t, 1)
 		}
 	}
 	pending := t.when > 0
@@ -576,7 +587,7 @@ func (t *timer) modify(when, period int64, f func(arg any, seq uintptr, delay in
 		if t.state&timerZombie != 0 {
 			// In the heap but marked for removal (by a Stop).
 			// Unmark it, since it has been Reset and will be running again.
-			t.ts.zombies.Add(-1)
+			t.ts.zombieAdd(t, -1)
 			t.state &^= timerZombie
 		}
 		// The corresponding heap[i].when is updated later.
@@ -767,7 +778,7 @@ func (ts *timers) cleanHead() {
 			if t.state&timerZombie != 0 {
 				t.state &^= timerHeaped | timerZombie | timerModified
 				t.ts = nil
-				ts.zombies.Add(-1)
+				ts.zombieAdd(t, -1)
 				ts.heap[n-1] = timerWhen{}
 				ts.heap = ts.heap[:n-1]
 			}
@@ -819,6 +830,7 @@ func (ts *timers) take(src *timers) {
 		}
 		src.heap = nil
 		src.zombies.Store(0)
+		src.zombieChans.Store(0)
 		src.minWhenHeap.Store(0)
 		src.minWhenModified.Store(0)
 		src.len.Store(0)
@@ -921,7 +933,7 @@ func (ts *timers) adjust(now int64, force bool) {
 			badTimer()
 
 		case t.state&timerZombie != 0:
-			ts.zombies.Add(-1)
+			ts.zombieAdd(t, -1)
 			t.state &^= timerHeaped | timerZombie | timerModified
 			n := len(ts.heap)
 			ts.heap[i] = ts.heap[n-1]
@@ -1130,7 +1142,7 @@ func (t *timer) unlockAndRun(now int64, bubble *synctestBubble) {
 		t.state |= timerModified
 		if next == 0 {
 			t.state |= timerZombie
-			t.ts.zombies.Add(1)
+			t.ts.zombieAdd(t, 1)
 		}
 		t.updateHeap()
 	}
@@ -1453,7 +1465,7 @@ func blockTimerChan(c *hchan) {
 	// Unmark it in this case, if the timer is still pending.
 	if t.state&timerHeaped != 0 && t.state&timerZombie != 0 && t.when > 0 {
 		t.state &^= timerZombie
-		t.ts.zombies.Add(-1)
+		t.ts.zombieAdd(t, -1)
 	}
 
 	// t.maybeAdd must be called with t unlocked,
@@ -1488,7 +1500,7 @@ func unblockTimerChan(c *hchan) {
 		// Mark for removal from heap but do not clear t.when,
 		// so that we know what time it is still meant to trigger.
 		t.state |= timerZombie
-		t.ts.zombies.Add(1)
+		t.ts.zombieAdd(t, 1)
 	}
 	t.unlock()
 }

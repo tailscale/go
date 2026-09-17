@@ -574,6 +574,30 @@ func initMetrics() {
 				out.scalar = tailscaleStackShrinks.Load()
 			},
 		},
+		"/tailscale/sched/timers/tracked:timers": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(readTailscaleTimerCounts().tracked)
+			},
+		},
+		"/tailscale/sched/timers/zombies/chan:timers": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(readTailscaleTimerCounts().zombieChans)
+			},
+		},
+		"/tailscale/sched/timers/zombies/func:timers": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(readTailscaleTimerCounts().zombieFuncs())
+			},
+		},
+		"/tailscale/sched/timers/zombies:timers": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(readTailscaleTimerCounts().zombies)
+			},
+		},
 	}
 
 	for _, info := range godebugs.All {

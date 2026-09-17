@@ -934,11 +934,13 @@ type p struct {
 	// tailscaleStackHistSlack from zero, so they cannot overflow.
 	tsStackHist [tailscaleStackHistLen]int16
 
+	// goroutinesCreated is the total count of goroutines created by this P.
+	// It is placed before gcStopTime, unlike upstream, to keep it in the
+	// same cache line as tsStackHist; see TestTailscaleStackHistCacheLine.
+	goroutinesCreated uint64
+
 	// gcStopTime is the nanotime timestamp that this P last entered _Pgcstop.
 	gcStopTime int64
-
-	// goroutinesCreated is the total count of goroutines created by this P.
-	goroutinesCreated uint64
 
 	// xRegs is the per-P extended register state used by asynchronous
 	// preemption. This is an empty struct on platforms that don't use extended

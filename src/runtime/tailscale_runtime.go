@@ -7,6 +7,7 @@ package runtime
 import (
 	"internal/runtime/atomic"
 	"internal/runtime/sys"
+	_ "unsafe" // for go:linkname
 )
 
 // TailscaleCurrentP returns the runtime's currently executing 'p' ID.
@@ -20,21 +21,126 @@ func TailscaleCurrentP() int {
 // pending in the runtime across all Ps, as well as the number of "zombie"
 // timers.
 func TailscaleNumTimers() (total, zombies int) {
-	var sum uint32
-	var nzombies int32
+	c := readTailscaleTimerCounts()
+	return int(c.tracked), int(c.zombies)
+}
 
+// tailscaleTimerCounts is a snapshot of the per-P timer heap counters
+// summed over all Ps. Each field is read separately and without stopping
+// the world, so the fields are individually accurate but may not be
+// mutually consistent.
+type tailscaleTimerCounts struct {
+	tracked     int64 // timers in the heaps, including zombies
+	zombies     int64 // heaped timers that have been stopped
+	zombieChans int64 // zombies that are channel timers
+}
+
+// zombieFuncs returns the number of zombies that are not channel
+// timers: AfterFunc timers and runtime-internal ones such as netpoll
+// deadlines. Those are the zombies that pin a closure until the owning P
+// removes them from its heap.
+func (c tailscaleTimerCounts) zombieFuncs() int64 {
+	return max(c.zombies-c.zombieChans, 0)
+}
+
+// readTailscaleTimerCounts sums the timer heap counters over all Ps.
+// Timers in synctest bubbles live in the bubble's heap and are not
+// counted.
+func readTailscaleTimerCounts() (c tailscaleTimerCounts) {
 	// Prevent allp slice changes. This is like retake.
 	lock(&allpLock)
 	for _, pp := range allp {
 		if pp == nil {
 			continue
 		}
-		sum += pp.timers.len.Load()
-		nzombies += pp.timers.zombies.Load()
+		c.tracked += int64(pp.timers.len.Load())
+		c.zombies += int64(pp.timers.zombies.Load())
+		c.zombieChans += int64(pp.timers.zombieChans.Load())
 	}
 	unlock(&allpLock)
+	// The sums can only go negative transiently, when a read straddled
+	// a stop or a heap cleanup on another P.
+	c.zombies = max(c.zombies, 0)
+	c.zombieChans = max(c.zombieChans, 0)
+	return c
+}
 
-	return int(sum), int(nzombies)
+// zombieAdd adjusts ts.zombies by delta on behalf of the timer t, which
+// is being marked as (delta > 0) or unmarked as (delta < 0) a zombie.
+// It also keeps the Tailscale-specific per-kind count in ts.zombieChans.
+// The caller must hold t's lock, as for any other change to t.state.
+func (ts *timers) zombieAdd(t *timer, delta int32) {
+	ts.zombies.Add(delta)
+	if t.isChan {
+		ts.zombieChans.Add(delta)
+	}
+}
+
+// releaseTimer implements time.(*Timer).TailscaleRelease.
+// It reports whether the timer was stopped before it was run, like
+// stopTimer.
+//
+//go:linkname releaseTimer time.releaseTimer
+func releaseTimer(t *timeTimer) bool {
+	if t.isFake && getg().bubble == nil {
+		fatal("release of synctest timer from outside bubble")
+	}
+	return t.release()
+}
+
+// timerReleased is a timer state bit set by (*timer).release and never
+// cleared. resetTimer panics when it is set. It is a Tailscale addition
+// and takes the top bit of the state byte to stay clear of the bits
+// upstream defines in time.go.
+const timerReleased uint8 = 1 << 7
+
+// release stops t and, for a func timer, drops t's reference to the
+// function it would have called, so that the function and everything it
+// captures can be collected even while t sits in a heap as a zombie.
+// The caller promises never to reset t again; resetTimer enforces that
+// with a panic once timerReleased is set. Reports whether the timer was
+// stopped before it was run.
+//
+// A channel timer is only stopped and marked released. Its arg is its
+// channel, which the runtime keeps finding through t.hchan as long as
+// user code can still receive from the channel, and a zombie channel
+// timer pins only the small timer allocation and its channel anyway.
+func (t *timer) release() bool {
+	if t.isChan {
+		t.lock()
+		t.trace("release")
+		t.state |= timerReleased
+		t.unlock()
+		return t.stop()
+	}
+
+	// This mirrors the non-channel half of t.stop, so that the stop and
+	// the clearing of t.arg happen under one hold of the lock and no
+	// concurrent run can observe a live timer with a cleared arg.
+	t.lock()
+	t.trace("release")
+	if t.state&timerHeaped != 0 {
+		t.state |= timerModified
+		if t.state&timerZombie == 0 {
+			t.state |= timerZombie
+			t.ts.zombieAdd(t, 1)
+		}
+	}
+	t.state |= timerReleased
+	pending := t.when > 0
+	t.when = 0
+	t.f = tailscaleReleasedTimerFunc
+	t.arg = nil
+	t.unlock()
+	return pending
+}
+
+// tailscaleReleasedTimerFunc is installed as t.f by t.release. A released
+// timer is a zombie with t.when == 0 and can only run again if user code
+// races a Reset against the release, which resetTimer otherwise rejects,
+// so reaching this is a bug.
+func tailscaleReleasedTimerFunc(arg any, seq uintptr, delay int64) {
+	throw("released timer ran")
 }
 
 // TailscaleStackStats describes the stack of the goroutine that
