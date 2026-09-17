@@ -62,6 +62,7 @@ import (
 	"internal/reflectlite"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -677,6 +678,19 @@ func (c *timerCtx) String() string {
 		time.Until(c.deadline).String() + "])"
 }
 
+// tsReleaseContextTimer makes timerCtx.cancel release its timer with
+// TailscaleRelease rather than only stopping it. A stopped timer can sit
+// in the runtime's timer heap until its deadline, and its func holds the
+// timerCtx and through it the whole parent chain of contexts and values.
+// Releasing drops that reference; the timer is never reset, so that is
+// safe. This is a Tailscale fork addition, opt-in through the
+// environment so that it can be A/B tested in production. The package
+// cannot import os, so it reads the variable through syscall.
+var tsReleaseContextTimer = func() bool {
+	v, _ := syscall.Getenv("TS_RELEASE_CONTEXT_TIMER")
+	return v == "1"
+}()
+
 func (c *timerCtx) cancel(removeFromParent bool, err, cause error) {
 	c.cancelCtx.cancel(false, err, cause)
 	if removeFromParent {
@@ -685,7 +699,11 @@ func (c *timerCtx) cancel(removeFromParent bool, err, cause error) {
 	}
 	c.mu.Lock()
 	if c.timer != nil {
-		c.timer.Stop()
+		if tsReleaseContextTimer {
+			c.timer.TailscaleRelease()
+		} else {
+			c.timer.Stop()
+		}
 		c.timer = nil
 	}
 	c.mu.Unlock()
