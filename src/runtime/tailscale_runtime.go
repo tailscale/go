@@ -67,13 +67,158 @@ func readTailscaleTimerCounts() (c tailscaleTimerCounts) {
 
 // zombieAdd adjusts ts.zombies by delta on behalf of the timer t, which
 // is being marked as (delta > 0) or unmarked as (delta < 0) a zombie.
-// It also keeps the Tailscale-specific per-kind count in ts.zombieChans.
-// The caller must hold t's lock, as for any other change to t.state.
+// It also keeps the Tailscale-specific per-kind count in ts.zombieChans,
+// and when a zombie is unmarked it closes out the func zombie lifetime
+// accounting described at tailscaleFuncZombieBuckets. The caller must
+// hold t's lock, as for any other change to t.state.
 func (ts *timers) zombieAdd(t *timer, delta int32) {
 	ts.zombies.Add(delta)
 	if t.isChan {
 		ts.zombieChans.Add(delta)
 	}
+	if delta < 0 {
+		ts.tailscaleFuncZombieRecord(t)
+	}
+}
+
+// Func zombie lifetime accounting.
+//
+// The /tailscale/sched/timers/zombies/func:timers gauge says how many
+// stopped func timers are sitting in the heaps holding their functions,
+// but not for how long. A large steady value is consistent both with a
+// high rate of zombies that each last microseconds and with a modest
+// rate of zombies that each last through many garbage collections, and
+// only the latter costs anything. The metrics under
+// /tailscale/sched/timers/zombies/func/ tell the two apart. created and
+// removed are cumulative counts, so the gauge divided by the creation
+// rate is the mean time a func zombie holds its function, and lifetime
+// is a histogram of that time measured in GC cycles, which is the unit
+// that matters: a zombie removed before the next cycle began cost the
+// collector nothing, while one that lasted five cycles had its function
+// and everything it references marked live five times.
+//
+// Recording the histogram needs to know, at removal, when the zombie was
+// made. Rather than grow every timer by a field, the GC cycle count at
+// the time of the Stop is stashed in t.when, as -(cycles+1). A stopped
+// func timer otherwise has t.when == 0 until a Reset, and every read of
+// t.when is either a "t.when > 0" pending test, which treats the stash
+// like zero, or is unreachable for a heaped zombie, so the stash is
+// invisible to upstream code. The stash is cleared when it is read, so a
+// timer that is not a heaped zombie never has a negative t.when. Channel
+// timers are left alone: unblockTimerChan makes zombies of them without
+// clearing t.when, they pin only their channel, and they are not what
+// the metric is for. Neither are timers made zombies by their own run in
+// unlockAndRun, which are removed from the heap in the same call, nor
+// timers released with TailscaleRelease, which hold no function.
+//
+// The counts live in the owning P's timers struct, next to the zombie
+// counters they refine, and are flushed to the globals below when a P is
+// destroyed.
+
+// tailscaleFuncZombieBuckets is the number of buckets in the
+// /tailscale/sched/timers/zombies/func/lifetime:gc-cycles histogram.
+// Bucket 0 holds zombies removed before another GC cycle began, and
+// bucket i > 0 holds those that lasted from 1<<(i-1) up to but not
+// including 1<<i cycles, except that the last bucket has no upper bound.
+const tailscaleFuncZombieBuckets = 7
+
+// tailscaleFuncZombiesCreated and tailscaleFuncZombieCycles hold the
+// counts flushed from destroyed Ps. Only their sums with the per-P counts
+// are meaningful.
+var (
+	tailscaleFuncZombiesCreated atomic.Uint64
+	tailscaleFuncZombieCycles   [tailscaleFuncZombieBuckets]atomic.Uint64
+)
+
+// tailscaleFuncZombieBucket returns the histogram bucket for a zombie
+// that lasted through the start of cycles GC cycles.
+func tailscaleFuncZombieBucket(cycles uint32) int {
+	return min(sys.Len64(uint64(cycles)), tailscaleFuncZombieBuckets-1)
+}
+
+// tailscaleFuncZombieCyclesBuckets returns the bucket boundaries of the
+// lifetime histogram: 0, 1, then successive powers of two, then +Inf.
+func tailscaleFuncZombieCyclesBuckets() []float64 {
+	buckets := make([]float64, 0, tailscaleFuncZombieBuckets+1)
+	buckets = append(buckets, 0)
+	for i := 1; i < tailscaleFuncZombieBuckets; i++ {
+		buckets = append(buckets, float64(uint64(1)<<(i-1)))
+	}
+	return append(buckets, float64Inf())
+}
+
+// tailscaleFuncZombieStamp records that t, a func timer that the caller
+// has just made a zombie by stopping it, now holds its function for no
+// reason. It stashes the current GC cycle count in t.when, which the
+// caller must already have cleared. The caller must hold t's lock.
+func (t *timer) tailscaleFuncZombieStamp() {
+	if t.isChan || t.when != 0 {
+		throw("bad func zombie stamp")
+	}
+	t.when = -int64(work.cycles.Load()) - 1
+	t.ts.tsFuncZombiesCreated.Add(1)
+}
+
+// tailscaleFuncZombieRecord closes out the accounting for t if it is a
+// stamped func zombie: it counts t in ts's lifetime histogram by the
+// number of GC cycles begun since the stamp and clears the stamp. It
+// does nothing for a timer without a stamp. The caller must hold t's
+// lock or have the world stopped.
+func (ts *timers) tailscaleFuncZombieRecord(t *timer) {
+	if t.when >= 0 {
+		return
+	}
+	// The subtraction wraps correctly if the cycle count did.
+	cycles := work.cycles.Load() - uint32(-(t.when + 1))
+	t.when = 0
+	ts.tsFuncZombieCycles[tailscaleFuncZombieBucket(cycles)].Add(1)
+}
+
+// tailscaleFuncZombieUnstamp is tailscaleFuncZombieRecord against t's
+// own heap, for callers that are about to overwrite t.when.
+func (t *timer) tailscaleFuncZombieUnstamp() {
+	if t.when < 0 {
+		t.ts.tailscaleFuncZombieRecord(t)
+	}
+}
+
+// tailscaleFuncZombieFlush moves ts's cumulative func zombie counts into
+// the globals so that they survive the P that owns ts being destroyed.
+//
+// The world must be stopped.
+func tailscaleFuncZombieFlush(ts *timers) {
+	assertWorldStopped()
+	tailscaleFuncZombiesCreated.Add(int64(ts.tsFuncZombiesCreated.Swap(0)))
+	for i := range ts.tsFuncZombieCycles {
+		tailscaleFuncZombieCycles[i].Add(int64(ts.tsFuncZombieCycles[i].Swap(0)))
+	}
+}
+
+// tailscaleFuncZombieRead sums the per-P and global func zombie counts.
+// It returns the number of func zombies created and, if counts is
+// non-nil, fills it with the lifetime histogram, whose length must be
+// tailscaleFuncZombieBuckets. The entries of counts sum to the number of
+// func zombies removed. Like readTailscaleTimerCounts, it holds allpLock
+// so that the set of Ps cannot change under it, but reads the counters
+// without stopping the world, so the results are individually accurate
+// rather than mutually consistent.
+func tailscaleFuncZombieRead(counts []uint64) (created uint64) {
+	lock(&allpLock)
+	created = tailscaleFuncZombiesCreated.Load()
+	for i := range counts {
+		counts[i] = tailscaleFuncZombieCycles[i].Load()
+	}
+	for _, pp := range allp {
+		if pp == nil {
+			continue
+		}
+		created += pp.timers.tsFuncZombiesCreated.Load()
+		for i := range counts {
+			counts[i] += pp.timers.tsFuncZombieCycles[i].Load()
+		}
+	}
+	unlock(&allpLock)
+	return created
 }
 
 // releaseTimer implements time.(*Timer).TailscaleRelease.
@@ -128,6 +273,10 @@ func (t *timer) release() bool {
 	}
 	t.state |= timerReleased
 	pending := t.when > 0
+	// If an earlier Stop left t a zombie holding its function, that
+	// ends here. A timer that release itself just made a zombie is not
+	// stamped, since it holds no function from here on.
+	t.tailscaleFuncZombieUnstamp()
 	t.when = 0
 	t.f = tailscaleReleasedTimerFunc
 	t.arg = nil

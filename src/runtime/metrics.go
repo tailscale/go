@@ -27,9 +27,11 @@ var (
 	sizeClassBuckets []float64
 	timeHistBuckets  []float64
 
-	// tailscaleStackSizeBuckets is a Tailscale addition; see
-	// tailscaleStackHistBuckets.
-	tailscaleStackSizeBuckets []float64
+	// tailscaleStackSizeBuckets and tailscaleFuncZombieBucketBounds
+	// are Tailscale additions; see tailscaleStackHistBuckets and
+	// tailscaleFuncZombieCyclesBuckets.
+	tailscaleStackSizeBuckets       []float64
+	tailscaleFuncZombieBucketBounds []float64
 )
 
 type metricData struct {
@@ -91,6 +93,7 @@ func initMetrics() {
 
 	timeHistBuckets = timeHistogramMetricsBuckets()
 	tailscaleStackSizeBuckets = tailscaleStackHistBuckets()
+	tailscaleFuncZombieBucketBounds = tailscaleFuncZombieCyclesBuckets()
 	metrics = map[string]metricData{
 		"/cgo/go-to-c-calls:calls": {
 			compute: func(_ *statAggregate, out *metricValue) {
@@ -584,6 +587,30 @@ func initMetrics() {
 			compute: func(_ *statAggregate, out *metricValue) {
 				out.kind = metricKindUint64
 				out.scalar = uint64(readTailscaleTimerCounts().zombieChans)
+			},
+		},
+		"/tailscale/sched/timers/zombies/func/created:timers": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = tailscaleFuncZombieRead(nil)
+			},
+		},
+		"/tailscale/sched/timers/zombies/func/lifetime:gc-cycles": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				hist := out.float64HistOrInit(tailscaleFuncZombieBucketBounds)
+				tailscaleFuncZombieRead(hist.counts)
+			},
+		},
+		"/tailscale/sched/timers/zombies/func/removed:timers": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				var counts [tailscaleFuncZombieBuckets]uint64
+				tailscaleFuncZombieRead(counts[:])
+				var n uint64
+				for _, c := range counts {
+					n += c
+				}
+				out.kind = metricKindUint64
+				out.scalar = n
 			},
 		},
 		"/tailscale/sched/timers/zombies/func:timers": {

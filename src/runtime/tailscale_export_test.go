@@ -38,3 +38,9 @@ func TailscaleStackHistSlow() (want, got []uint64) {
 func TailscaleStackHistLayout() (histOff, histSize, goroutinesCreatedOff uintptr) {
 	return unsafe.Offsetof(p{}.tsStackHist), unsafe.Sizeof(p{}.tsStackHist), unsafe.Offsetof(p{}.goroutinesCreated)
 }
+
+// TailscaleGCCycles returns the number of GC cycles that have begun,
+// which is the clock that the func zombie lifetime histogram counts in.
+func TailscaleGCCycles() uint32 {
+	return work.cycles.Load()
+}

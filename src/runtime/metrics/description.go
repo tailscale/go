@@ -543,8 +543,26 @@ var allDesc = []Description{
 		Kind:        KindUint64,
 	},
 	{
+		Name:        "/tailscale/sched/timers/zombies/func/created:timers",
+		Description: "Cumulative count of func timers (see /tailscale/sched/timers/zombies/func:timers) that were stopped while in a scheduler timer heap and so became zombies still holding their function. Together with /tailscale/sched/timers/zombies/func/removed:timers this gives the turnover behind the gauge: the gauge divided by the rate of this counter is the mean time a func zombie holds its function. Timers released with time.(*Timer).TailscaleRelease before they were stopped are not counted, since they hold no function, and neither are timers that ran to completion. This metric is specific to the Tailscale fork of Go.",
+		Kind:        KindUint64,
+		Cumulative:  true,
+	},
+	{
+		Name:        "/tailscale/sched/timers/zombies/func/lifetime:gc-cycles",
+		Description: "Distribution of how long the func zombies counted by /tailscale/sched/timers/zombies/func/removed:timers held their function, measured in garbage collection cycles that began in the meantime. A zombie in the first bucket was removed, reset, or released before the next cycle began and so cost the collector nothing, while one that lasted N cycles had its function and everything it references marked live N times, and possibly once more if it was stopped during a cycle's mark phase. Bucket counts increase monotonically. This metric is specific to the Tailscale fork of Go.",
+		Kind:        KindFloat64Histogram,
+		Cumulative:  true,
+	},
+	{
+		Name:        "/tailscale/sched/timers/zombies/func/removed:timers",
+		Description: "Cumulative count of the func zombies counted by /tailscale/sched/timers/zombies/func/created:timers that have since let go of their function: because the owning P removed them from its heap, because they were reset with time.(*Timer).Reset, or because they were released with time.(*Timer).TailscaleRelease. It equals the sum of the /tailscale/sched/timers/zombies/func/lifetime:gc-cycles bucket counts. This metric is specific to the Tailscale fork of Go.",
+		Kind:        KindUint64,
+		Cumulative:  true,
+	},
+	{
 		Name:        "/tailscale/sched/timers/zombies/func:timers",
-		Description: "Count of zombie timers (see /tailscale/sched/timers/zombies:timers) that call a function rather than send on a channel: timers created with time.AfterFunc, plus runtime-internal timers such as network poll deadlines. Each one keeps its function and everything the function references reachable until the owning P removes it from its heap, so this count measures how much a program stands to gain from time.(*Timer).TailscaleRelease. This metric is specific to the Tailscale fork of Go.",
+		Description: "Count of zombie timers (see /tailscale/sched/timers/zombies:timers) that call a function rather than send on a channel: timers created with time.AfterFunc, plus runtime-internal timers such as network poll deadlines. Each one keeps its function and everything the function references reachable until the owning P removes it from its heap, so this count measures how much a program stands to gain from time.(*Timer).TailscaleRelease. The metrics under /tailscale/sched/timers/zombies/func/ report how quickly these zombies turn over and how many GC cycles they last. This metric is specific to the Tailscale fork of Go.",
 		Kind:        KindUint64,
 	},
 	{

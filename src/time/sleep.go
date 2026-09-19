@@ -87,7 +87,9 @@ type Timer struct {
 //
 // The number of stopped timers still occupying the runtime's timer heaps
 // is reported by the /tailscale/sched/timers/zombies/func:timers metric
-// in [runtime/metrics].
+// in [runtime/metrics], and the
+// /tailscale/sched/timers/zombies/func/lifetime:gc-cycles metric reports
+// how many GC cycles they last there.
 //
 // This method exists only in the Tailscale fork of Go and must not be
 // used by code that needs to build with upstream Go.

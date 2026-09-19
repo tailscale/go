@@ -158,3 +158,225 @@ func TestTailscaleTimerMetricsChan(t *testing.T) {
 	}
 	t.Fatalf("no chan zombie observed in %d attempts", attempts)
 }
+
+// tsFuncZombieStats holds one reading of the func zombie lifetime
+// metrics.
+type tsFuncZombieStats struct {
+	created, removed uint64
+	lifetime         *metrics.Float64Histogram
+}
+
+func readTSFuncZombieStats(t *testing.T) tsFuncZombieStats {
+	t.Helper()
+	s := []metrics.Sample{
+		{Name: "/tailscale/sched/timers/zombies/func/created:timers"},
+		{Name: "/tailscale/sched/timers/zombies/func/removed:timers"},
+		{Name: "/tailscale/sched/timers/zombies/func/lifetime:gc-cycles"},
+	}
+	metrics.Read(s)
+	for _, v := range s[:2] {
+		if kind := v.Value.Kind(); kind != metrics.KindUint64 {
+			t.Fatalf("%s: kind = %v; want KindUint64", v.Name, kind)
+		}
+	}
+	if kind := s[2].Value.Kind(); kind != metrics.KindFloat64Histogram {
+		t.Fatalf("%s: kind = %v; want KindFloat64Histogram", s[2].Name, kind)
+	}
+	st := tsFuncZombieStats{
+		created:  s[0].Value.Uint64(),
+		removed:  s[1].Value.Uint64(),
+		lifetime: s[2].Value.Float64Histogram(),
+	}
+	var sum uint64
+	for _, c := range st.lifetime.Counts {
+		sum += c
+	}
+	if sum != st.removed {
+		t.Errorf("lifetime histogram counts sum to %d; removed = %d", sum, st.removed)
+	}
+	return st
+}
+
+// lasted returns the number of func zombies whose recorded lifetime, in
+// GC cycles, could have been anywhere from lo through hi inclusive: the
+// sum of the histogram buckets that overlap that range.
+func (st tsFuncZombieStats) lasted(lo, hi uint32) uint64 {
+	var n uint64
+	h := st.lifetime
+	for i, c := range h.Counts {
+		if h.Buckets[i+1] > float64(lo) && h.Buckets[i] <= float64(hi) {
+			n += c
+		}
+	}
+	return n
+}
+
+// tsPaddedStoppedTimers creates n stopped AfterFunc timers, each buried
+// among four live ones as in TestTailscaleTimerMetricsFunc, so that the
+// zombies stay under a quarter of the heap and are not swept before the
+// test reads the metrics. It appends the live timers to *live for the
+// caller to stop later and returns the stopped ones.
+func tsPaddedStoppedTimers(t *testing.T, n int, live *[]*time.Timer) []*time.Timer {
+	t.Helper()
+	var stopped []*time.Timer
+	for range n {
+		for range 4 {
+			*live = append(*live, time.AfterFunc(time.Hour, func() {}))
+		}
+		stopped = append(stopped, time.AfterFunc(time.Hour, func() {}))
+	}
+	for _, tm := range stopped {
+		if !tm.Stop() {
+			t.Fatal("Stop = false; want true")
+		}
+	}
+	return stopped
+}
+
+// TestTailscaleFuncZombieLifetime checks that stopping AfterFunc timers
+// counts them as created func zombies, and that resetting them after
+// some garbage collections counts them as removed with the right number
+// of GC cycles in the lifetime histogram. Any timer add on the same P
+// whose earlier deadline has arrived sweeps every zombie out of the
+// heap, so an attempt can lose its zombies early; the test retries in
+// that case.
+func TestTailscaleFuncZombieLifetime(t *testing.T) {
+	const n = 20
+	const gcs = 3
+	var live []*time.Timer
+	defer func() {
+		for _, tm := range live {
+			tm.Stop()
+		}
+	}()
+
+	const attempts = 3
+	for attempt := 1; attempt <= attempts; attempt++ {
+		before := readTSFuncZombieStats(t)
+		cycles0 := runtime.TailscaleGCCycles()
+		stopped := tsPaddedStoppedTimers(t, n, &live)
+		// A second Stop must not disturb the stamp the first one left.
+		for _, tm := range stopped {
+			if tm.Stop() {
+				t.Fatal("second Stop = true; want false")
+			}
+		}
+		mid := readTSFuncZombieStats(t)
+		if got := mid.created - before.created; got < n {
+			t.Fatalf("created grew by %d after stopping %d timers; want at least %d", got, n, n)
+		}
+
+		for range gcs {
+			runtime.GC()
+		}
+		cycles1 := runtime.TailscaleGCCycles()
+		if cycles1-cycles0 < gcs {
+			t.Fatalf("GC cycles advanced by %d over %d runtime.GC calls", cycles1-cycles0, gcs)
+		}
+
+		// Resetting a stopped timer unmarks the zombie and so ends its
+		// hold on the function, which is a removal for the histogram.
+		for _, tm := range stopped {
+			if tm.Reset(time.Hour) {
+				t.Fatal("Reset of a stopped timer = true; want false")
+			}
+		}
+		live = append(live, stopped...)
+		after := readTSFuncZombieStats(t)
+		t.Logf("attempt %d: before: created=%d removed=%d %v", attempt, before.created, before.removed, before.lifetime.Counts)
+		t.Logf("attempt %d: after:  created=%d removed=%d %v", attempt, after.created, after.removed, after.lifetime.Counts)
+
+		if got := after.removed - before.removed; got < n {
+			t.Fatalf("removed grew by %d after resetting %d stopped timers; want at least %d", got, n, n)
+		}
+		// Each zombie that survived until its Reset lasted at least gcs
+		// cycles and at most however many began during the attempt.
+		if got := after.lasted(gcs, cycles1-cycles0) - before.lasted(gcs, cycles1-cycles0); got >= n {
+			return
+		} else {
+			t.Logf("attempt %d: only %d zombies recorded as lasting %d..%d cycles; want %d; retrying", attempt, got, gcs, cycles1-cycles0, n)
+		}
+	}
+	t.Fatalf("no attempt out of %d saw all %d zombies last %d GC cycles", attempts, n, gcs)
+}
+
+// TestTailscaleFuncZombieLifetimeImmediate checks that a stopped timer
+// reset before the next GC cycle lands in the histogram's first bucket.
+func TestTailscaleFuncZombieLifetimeImmediate(t *testing.T) {
+	const n = 20
+	var live []*time.Timer
+	defer func() {
+		for _, tm := range live {
+			tm.Stop()
+		}
+	}()
+	before := readTSFuncZombieStats(t)
+	cycles0 := runtime.TailscaleGCCycles()
+	stopped := tsPaddedStoppedTimers(t, n, &live)
+	for _, tm := range stopped {
+		tm.Reset(time.Hour)
+	}
+	live = append(live, stopped...)
+	after := readTSFuncZombieStats(t)
+	if cycles1 := runtime.TailscaleGCCycles(); cycles1 != cycles0 {
+		t.Skipf("a GC cycle began during the test (%d -> %d)", cycles0, cycles1)
+	}
+	if got := after.lifetime.Counts[0] - before.lifetime.Counts[0]; got < n {
+		t.Errorf("first lifetime bucket grew by %d after stopping and immediately resetting %d timers; want at least %d", got, n, n)
+	}
+}
+
+// TestTailscaleFuncZombieRelease checks that TailscaleRelease on an
+// already stopped timer records the end of the zombie's lifetime.
+func TestTailscaleFuncZombieRelease(t *testing.T) {
+	var live []*time.Timer
+	defer func() {
+		for _, tm := range live {
+			tm.Stop()
+		}
+	}()
+	before := readTSFuncZombieStats(t)
+	cycles0 := runtime.TailscaleGCCycles()
+	stopped := tsPaddedStoppedTimers(t, 1, &live)
+	runtime.GC()
+	cycles1 := runtime.TailscaleGCCycles()
+	if stopped[0].TailscaleRelease() {
+		t.Error("TailscaleRelease of a stopped timer = true; want false")
+	}
+	after := readTSFuncZombieStats(t)
+	if got := after.removed - before.removed; got < 1 {
+		t.Errorf("removed grew by %d after releasing a stopped timer; want at least 1", got)
+	}
+	if got := after.lasted(1, cycles1-cycles0) - before.lasted(1, cycles1-cycles0); got < 1 {
+		t.Errorf("no zombie recorded as lasting 1..%d cycles after releasing a stopped timer; counts %v -> %v", cycles1-cycles0, before.lifetime.Counts, after.lifetime.Counts)
+	}
+}
+
+// TestTailscaleFuncZombieFlush checks that the cumulative counts survive
+// their P being destroyed by a GOMAXPROCS decrease.
+func TestTailscaleFuncZombieFlush(t *testing.T) {
+	procs := runtime.GOMAXPROCS(0)
+	if procs < 2 {
+		t.Skip("need GOMAXPROCS >= 2 to destroy a P")
+	}
+	defer runtime.GOMAXPROCS(procs)
+
+	const n = 20
+	var live []*time.Timer
+	defer func() {
+		for _, tm := range live {
+			tm.Stop()
+		}
+	}()
+	before := readTSFuncZombieStats(t)
+	tsPaddedStoppedTimers(t, n, &live)
+	runtime.GOMAXPROCS(1)
+	runtime.GOMAXPROCS(procs)
+	after := readTSFuncZombieStats(t)
+	if got := after.created - before.created; got < n {
+		t.Errorf("created grew by %d across a GOMAXPROCS change after stopping %d timers; want at least %d", got, n, n)
+	}
+	if after.removed < before.removed {
+		t.Errorf("removed went from %d to %d across a GOMAXPROCS change", before.removed, after.removed)
+	}
+}

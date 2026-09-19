@@ -156,6 +156,24 @@ type timers struct {
 	// the cheap channel ones.
 	zombieChans atomic.Int32
 
+	// tsFuncZombiesCreated is the number of func timers (t.isChan unset)
+	// that were stopped while in this heap and so became zombies that
+	// still hold their function. It is a Tailscale addition maintained by
+	// (*timer).tailscaleFuncZombieStamp, and it backs the
+	// /tailscale/sched/timers/zombies/func/created:timers metric.
+	tsFuncZombiesCreated atomic.Uint64
+
+	// tsFuncZombieCycles is a histogram of the func zombies counted by
+	// tsFuncZombiesCreated that have since let go of their function, by
+	// the number of GC cycles that began while they held it. It is
+	// indexed by tailscaleFuncZombieBucket and maintained by
+	// (*timers).tailscaleFuncZombieRecord. Its entries sum to the
+	// number of func zombies removed. It is a Tailscale addition and,
+	// together with tsFuncZombiesCreated, grows this struct by exactly
+	// one cache line, which keeps the fields of p that follow it in
+	// their tuned positions; see TestTailscaleStackHistCacheLine.
+	tsFuncZombieCycles [tailscaleFuncZombieBuckets]atomic.Uint64
+
 	// raceCtx is the race context used while executing timer functions.
 	raceCtx uintptr
 
@@ -493,15 +511,29 @@ func (t *timer) stop() bool {
 
 	t.lock()
 	t.trace("stop")
+	stamp := false
 	if t.state&timerHeaped != 0 {
 		t.state |= timerModified
 		if t.state&timerZombie == 0 {
 			t.state |= timerZombie
 			t.ts.zombieAdd(t, 1)
+			// This Stop made a func timer into a zombie that still
+			// holds its function. Tailscale records when that began,
+			// in t.when, once the pending check below is done with it.
+			stamp = !t.isChan
 		}
 	}
 	pending := t.when > 0
-	t.when = 0
+	if t.when > 0 {
+		// A func zombie stamped by an earlier Stop has a negative
+		// t.when, which a repeated Stop must preserve; see
+		// (*timer).tailscaleFuncZombieStamp. Upstream clears t.when
+		// unconditionally here.
+		t.when = 0
+	}
+	if stamp {
+		t.tailscaleFuncZombieStamp()
+	}
 
 	if t.isChan {
 		// Stop any future sends with stale values.
@@ -581,6 +613,11 @@ func (t *timer) modify(when, period int64, f func(arg any, seq uintptr, delay in
 
 	wake := false
 	pending := t.when > 0
+	// A Reset of a stopped func timer ends the stretch during which the
+	// zombie held its function. Tailscale records that here, before the
+	// stamp in t.when is overwritten, rather than in the zombieAdd call
+	// below, which would be too late to see it.
+	t.tailscaleFuncZombieUnstamp()
 	t.when = when
 	if t.state&timerHeaped != 0 {
 		t.state |= timerModified
@@ -822,6 +859,10 @@ func (ts *timers) take(src *timers) {
 			t := tw.timer
 			t.ts = nil
 			if t.state&timerZombie != 0 {
+				// Dropping the zombie ends its hold on its function.
+				// Tailscale records that against ts, since src is
+				// being destroyed.
+				ts.tailscaleFuncZombieRecord(t)
 				t.state &^= timerHeaped | timerZombie | timerModified
 			} else {
 				t.state &^= timerModified

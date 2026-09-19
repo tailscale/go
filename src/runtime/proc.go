@@ -6079,6 +6079,7 @@ func (pp *p) destroy() {
 	sched.goroutinesCreated.Add(int64(pp.goroutinesCreated))
 	pp.goroutinesCreated = 0
 	tailscaleStackHistFlush(pp)
+	tailscaleFuncZombieFlush(&pp.timers)
 	pp.xRegs.free()
 	pp.status = _Pdead
 }
