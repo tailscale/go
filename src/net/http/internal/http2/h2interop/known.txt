@@ -1,0 +1,295 @@
+# Known results for h2interop. See parseKnown in suite.go for the format:
+#
+#	<test name pattern> <PASS|FAIL|FLAKY|ERROR> [# comment]
+#
+# "*" matches any characters, including "/". The last matching line
+# wins. Tests not listed are expected to pass. FLAKY accepts any
+# result, for failures that depend on timing.
+#
+# Each entry says why the test fails. Entries marked "Go bug" should
+# be removed when the bug is fixed (and link to an issue once filed).
+
+#
+# Go bugs.
+#
+
+# The server initializes each stream's receive window to its configured
+# MaxReceiveBufferPerStream as soon as it sends SETTINGS, so data a
+# client sends under the default 65535-byte window before receiving
+# the server's SETTINGS is reset with RST_STREAM FLOW_CONTROL_ERROR.
+# RFC 9113 §6.9.3 permits this ("the receiver MAY instead send a
+# RST_STREAM with an error code of FLOW_CONTROL_ERROR for the affected
+# streams"; requirement 9113-6.9.3-3), but clients don't retry such
+# requests, so they fail. Accepting the data, which §6.9.3 also
+# permits, would interoperate better. Only configurations with
+# MaxReceiveBufferPerStream < 65535 (the "constrained" profile) are
+# affected; whether a client sends early depends on the client and on
+# timing. (conform/server/early-data-before-settings warns.)
+gogo:constrained/*/upload-* FLAKY
+gogo:constrained/*/echo-1m FLAKY
+gogo:constrained/*/concurrent-upload-20 FLAKY
+goserver:constrained/*/upload-100k FLAKY
+goserver:constrained/*/upload-10m FLAKY
+goserver:constrained/*/upload-stream FLAKY
+goserver:constrained/*/echo-1m FLAKY
+goserver:constrained/*/concurrent-upload-20 FLAKY
+goserver:constrained/h2load/*/uploads FLAKY
+
+# Go bug: the client can open a stream exceeding a newly lowered
+# SETTINGS_MAX_CONCURRENT_STREAMS after acknowledging the SETTINGS
+# (RFC 9113 §5.1.2): a request takes a concurrency slot under the old
+# limit, then the read loop applies the new limit and writes the ACK
+# before the request's HEADERS are written. Servers may treat this as a
+# connection error (nghttp2-based servers do, failing every request on
+# the connection) or a stream error with PROTOCOL_ERROR (the Go server
+# does), which the client doesn't retry.
+#
+# Go bug: similarly, the client can send DATA exceeding a newly lowered
+# SETTINGS_INITIAL_WINDOW_SIZE after acknowledging it: awaitFlowControl
+# takes flow control credit before the read loop applies the SETTINGS
+# and writes the ACK, and the DATA is written after the ACK.
+gogo:constrained/*/concurrent-* FLAKY
+goclient*/*:constrained/*/concurrent-* FLAKY
+goclient*/*:constrained/*/upload-* FLAKY
+goclient*/*:constrained/*/echo-1m FLAKY
+
+# Go bug: if the response headers arrive while the request body is
+# still blocked on flow control, nothing watches the request's context:
+# the body-writing goroutine waits in awaitFlowControl on cc.cond, and
+# the context.AfterFunc set up by clientStream.detach only exists once
+# the body has been sent. Cancellation or a deadline then never ends
+# the request, and reading the response body blocks forever.
+conform/client/context-deadline-during-body-write FAIL
+
+# Go bug: the server rejects HTTP/2 over TLS older than 1.2 and over
+# prohibited TLS 1.2 cipher suites (serverConn.serve), but the client
+# doesn't check: if tls.Config.MinVersion permits TLS 1.0 or 1.1 and
+# the server negotiates it with ALPN h2, the client speaks HTTP/2 over
+# it (RFC 9113 §9.2: MUST use TLS 1.2 or higher). (It also uses
+# prohibited cipher suites, which §9.2.2 says SHOULD NOT happen;
+# conform/tls/client/prohibited-cipher-suites warns.)
+conform/tls/client/tls-version FAIL
+
+# Go bug: after the client acknowledges a smaller
+# SETTINGS_HEADER_TABLE_SIZE, the server accepts a field block that
+# doesn't start with a dynamic table size update (RFC 9113 §4.3.1:
+# MUST be a COMPRESSION_ERROR). processSettings just shrinks the
+# decoder's table, so the tables silently diverge and a later block
+# fails with COMPRESSION_ERROR. (HAProxy's encoder does this.)
+conform/server/hpack-table-reduction-without-update FAIL
+
+# Go bug: trailers that the client sent on a stream the server had
+# already reset are treated as a connection error (PROTOCOL_ERROR,
+# "stream_went_down") rather than discarded (RFC 9113 §5.1, §6.4).
+conform/server/reset-stream-trailers-discarded FAIL
+
+# Go bug: connection-specific response fields set by a handler
+# (Keep-Alive, Proxy-Connection, Upgrade, and "Transfer-Encoding:
+# trailers") are sent (RFC 9113 §8.2.2: MUST NOT generate them). Only
+# Connection and other Transfer-Encoding values are dropped;
+# encodeHeaders in write.go exempts "transfer-encoding: trailers",
+# apparently confusing it with TE.
+conform/server/response-connection-specific-keep-alive FAIL
+conform/server/response-connection-specific-proxy-connection FAIL
+conform/server/response-connection-specific-upgrade FAIL
+conform/server/response-connection-specific-transfer-encoding-trailers FAIL
+
+# Go bug: on an established CONNECT tunnel, the server accepts a
+# HEADERS frame with END_STREAM as trailers (RFC 9113 §8.5: frames
+# other than DATA and stream management MUST be treated as a stream
+# error).
+conform/server/connect-tunnel-headers FAIL
+
+# Go bug: with extended CONNECT enabled, the server accepts an
+# extended CONNECT request without :scheme (RFC 8441 §4: :scheme and
+# :path MUST be included).
+conform/server/extended-connect-without-scheme FAIL
+
+# Go bug: the server doesn't limit the number of idle streams
+# prioritized with PRIORITY_UPDATE (RFC 9218 §7.1: prioritized idle
+# plus active streams MUST NOT exceed SETTINGS_MAX_CONCURRENT_STREAMS,
+# and servers MUST respond to excess with PROTOCOL_ERROR).
+conform/server/priority-update-idle-limit FAIL
+
+# Go bug: after the server acknowledges the client's smaller
+# SETTINGS_HEADER_TABLE_SIZE, the client accepts a response field block
+# without a dynamic table size update (RFC 9113 §4.3.1: MUST be a
+# COMPRESSION_ERROR). Same as the server bug above.
+conform/client/hpack-missing-size-update-after-ack FAIL
+
+# Go bug: the client silently ignores DATA on a closed stream (after
+# both END_STREAMs). RFC 9113 §6.1 says the recipient MUST respond with
+# a STREAM_CLOSED stream error, though §5.1 lets an endpoint minimally
+# process frames on closed streams, so this is arguable.
+conform/client/data-on-closed-stream FAIL
+
+# Go bug: a TE request field set by the application with a value other
+# than "trailers" is sent (RFC 9113 §8.2.2: it MUST NOT contain any
+# other value).
+conform/client/request-te-not-trailers FAIL
+
+# Go bug: on an established CONNECT tunnel, the client accepts a
+# HEADERS frame with END_STREAM from the server as trailers (RFC 9113
+# §8.5: MUST be treated as a stream error).
+conform/client/connect-tunnel-headers FAIL
+
+# Go bug: the client accepts SETTINGS_NO_RFC7540_PRIORITIES=2 (RFC 9218
+# §2.1: MUST be treated as a connection error).
+conform/client/settings-no-rfc7540-priorities-invalid FAIL
+
+# Go bug: the client limits its HPACK decoder's dynamic table to
+# MaxDecoderHeaderTableSize as soon as it's created, rather than when
+# the server acknowledges the client's SETTINGS_HEADER_TABLE_SIZE. RFC
+# 9113 §4.3.1 says the change "takes effect when the endpoint
+# acknowledges settings", so field blocks the server encodes before
+# then using the default 4096-byte table fail with COMPRESSION_ERROR.
+# Only configurations that lower MaxDecoderHeaderTableSize are affected.
+conform/client/hpack-table-size-before-settings-ack FAIL
+
+# Go bug: the client delivers DATA sent in 204 and 304 responses as
+# the response body (it only rejects DATA in responses to HEAD). RFC
+# 9113 §8.1.1: "204 or 304 responses contain no content".
+conform/client/response-data-in-204 FAIL
+conform/client/response-data-in-304 FAIL
+
+# Go bug: the server rejects requests whose :scheme isn't "http" or
+# "https" as malformed (serverConn.newWriterAndRequest), but RFC 9113
+# §8.3.1 says ":scheme is not restricted to http and https schemed
+# URIs" (requirement 9113-8.3.1-d1).
+conform/server/request-scheme-other FAIL
+
+# The server, like the client, sends a connection and a stream
+# WINDOW_UPDATE for every 32KB a handler reads, about 60 per 1MB DATA
+# frame (RFC 9113 §6.9.1 advises against very small increments;
+# conform/server/window-update-rate warns).
+
+# Go bug: the client sends a WINDOW_UPDATE for the connection and the
+# stream every time the application reads at least 4KB
+# (inflowMinRefresh), regardless of the peer's DATA frame size, while
+# advertising SETTINGS_MAX_FRAME_SIZE of 1MB. Envoy's default flood
+# protection (max_inbound_window_update_frames_per_data_frame_sent)
+# closes connections that receive many more WINDOW_UPDATE frames than
+# the DATA frames it sent, so large downloads from Envoy fail. Whether
+# Envoy sends large DATA frames depends on timing;
+# conform/client/window-update-rate measures the rate directly.
+goclient*/envoy/*/get-10m FLAKY
+
+# Go bug: the server discards request trailers that weren't declared in
+# a Trailer field (serverConn processTrailerHeaders only records
+# trailers if st.trailer != nil). RFC 9110 §6.6.2 says a sender SHOULD,
+# not MUST, declare trailers, and Go's HTTP/1 server keeps undeclared
+# trailers. The Node.js and Rust h2 clients don't declare them.
+conform/server/request-trailers-undeclared FAIL
+goserver*/node/*/request-trailers FAIL
+goserver*/rust-h2/*/request-trailers FAIL
+
+# Go bug: field values with leading or trailing whitespace MUST be
+# treated as malformed (RFC 9113 §8.2.1). Both the client and the server
+# accept them (httpguts.ValidHeaderFieldValue permits them).
+conform/client/response-field-value-leading-space FAIL
+conform/client/response-field-value-trailing-tab FAIL
+conform/server/request-field-value-leading-space FAIL
+conform/server/request-field-value-trailing-tab FAIL
+
+# Go bug: the client accepts responses containing connection-specific
+# fields, which MUST be treated as malformed (RFC 9113 §8.2.2). (The
+# server rejects such requests with a 400.)
+conform/client/response-connection-header FAIL
+conform/client/response-keep-alive FAIL
+conform/client/response-transfer-encoding FAIL
+conform/client/response-upgrade FAIL
+
+# Go bug: the client accepts a :status that isn't three digits (RFC
+# 9110 §15) and a non-numeric content-length (RFC 9110 §8.6).
+conform/client/response-invalid-status FAIL
+conform/client/response-content-length-invalid FAIL
+
+# Go bug: the client ignores frames that RFC 9113 requires be treated
+# as connection errors: SETTINGS_ENABLE_PUSH=1 from a server (§6.5.2),
+# RST_STREAM and WINDOW_UPDATE on idle streams (§6.4, §5.1), HEADERS
+# opening a server-initiated stream (§5.1.1), and PRIORITY_UPDATE from
+# a server (RFC 9218 §7.1).
+conform/client/settings-enable-push-1 FAIL
+conform/client/rst-stream-on-idle-stream FAIL
+conform/client/window-update-idle-stream FAIL
+conform/client/headers-on-unpromised-even-stream FAIL
+conform/client/priority-update-from-server FAIL
+
+# Go bug: on receiving a frame larger than its SETTINGS_MAX_FRAME_SIZE,
+# the client closes the connection without sending FRAME_SIZE_ERROR
+# (RFC 9113 §4.2).
+conform/client/frame-exceeds-max-frame-size FAIL
+
+# Go bug: on a connection error caused by a frame, the server raises
+# maxClientStreamID to that frame's stream ID even if it's even (not a
+# client stream), so the GOAWAY's last-stream-ID can name a stream the
+# client couldn't have initiated (RFC 9113 §6.8: it identifies "the
+# last peer-initiated stream"). h2spec's http2/5.1.1/1 (HEADERS on
+# stream 2) triggers this; the validator reports it on the h2spec runs.
+h2spec/tls FAIL
+h2spec/h2c FAIL
+
+#
+# Peer issues.
+#
+
+# Apache's mod_proxy_http2 joins multiple Cookie fields from its
+# HTTP/1.1 client with ", " rather than "; " before forwarding.
+goserver*/apache/*/cookie-crumbs FAIL
+
+# Apache's mod_proxy_http2 ends the HTTP/1.1 response normally when the
+# upstream HTTP/2 stream is reset, hiding the truncation.
+goserver*/apache/*/server-reset FAIL
+
+# Jetty has the same early-data flow control bug as the Go server (see
+# above), resetting data the Go client sent under the default window
+# before Jetty's SETTINGS arrived.
+goclient*/jetty:constrained/* FLAKY
+
+# The Python h2 library loses flow control credit when the client sends
+# data before the server's smaller SETTINGS_INITIAL_WINDOW_SIZE takes
+# effect, deadlocking the upload.
+goclient*/python-h2:constrained/* FLAKY
+
+# These clients don't retry requests the server refuses with
+# REFUSED_STREAM (RFC 9113 §8.7 permits but doesn't require retries).
+# The constrained Go server refuses streams beyond its
+# MAX_CONCURRENT_STREAMS of 4 sent before the client received its
+# SETTINGS. Envoy returns 503.
+goserver:constrained/envoy/*/concurrent-* FLAKY
+goserver:constrained/rust-h2/*/concurrent-* FLAKY
+goserver:constrained/nghttp/*/concurrent-* FLAKY
+goserver:constrained/nghttpx/*/concurrent-* FLAKY
+goserver:constrained/h2load/* FLAKY
+
+# The JDK's HttpClient fails requests exceeding the server's
+# MAX_CONCURRENT_STREAMS locally ("too many concurrent streams") rather
+# than queuing them.
+goserver:constrained/java/*/concurrent-* FAIL
+
+#
+# h2spec predates RFC 9113 and is stricter than it in places.
+#
+
+# h2spec sends a 17576-byte HEADERS frame, assuming the default
+# SETTINGS_MAX_FRAME_SIZE, but the Go server advertises 1MiB, so the
+# frame is legal.
+h2spec/*/http2/4.2/3 FAIL
+
+# The Go server responds to requests with connection-specific fields
+# or a TE field other than "trailers" with a 400 response, which RFC
+# 9113 §8.1.1 permits ("a server MAY send an HTTP response prior to
+# closing or resetting the stream"). h2spec requires a stream error.
+h2spec/*/http2/8.1.2.2/1 FAIL
+h2spec/*/http2/8.1.2.2/2 FAIL
+
+# The Go server rejects SETTINGS frames containing duplicate settings
+# with a PROTOCOL_ERROR connection error (serverConn.processSettings),
+# a deliberate hardening measure. RFC 9113 §6.5.3 permits duplicates,
+# which are processed in order.
+h2spec/*/http2/6.5.3/1 FAIL
+
+# In h2c mode the Go server's port also serves HTTP/1.1, so an invalid
+# HTTP/2 connection preface is handled as a malformed HTTP/1 request
+# (400 Bad Request) rather than as an HTTP/2 connection error.
+h2spec/h2c/http2/3.5/2 FAIL
