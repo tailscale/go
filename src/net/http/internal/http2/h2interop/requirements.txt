@@ -1,0 +1,2175 @@
+# Normative requirements of the HTTP/2 RFCs, for tracking test coverage.
+#
+# This file lists every sentence containing a BCP 14 keyword in
+# RFC 9113 (HTTP/2), RFC 7541 (HPACK), RFC 9218 (Extensible
+# Priorities, HTTP/2 parts), and RFC 8441 (Extended CONNECT). Each entry
+# is
+#
+#	<id> <keywords> §<section> <section title>
+#		<text>
+#		[n/a <role>: <reason>]...
+#
+# where <id> is <rfc>-<section>-<n>. Requirements bind the Go client,
+# the Go server, or both ("roles"). Tests, validator checks, and h2spec
+# cases declare which requirement IDs they cover (search the source for
+# the ID). A role that no test covers must have an "n/a" line saying
+# why it can't or needn't be tested. Run h2interop -requirements to see
+# the coverage of each requirement; TestRequirements fails if any role
+# of any requirement is neither covered nor marked n/a.
+#
+# Quoted text is from the RFCs, Copyright (c) IETF Trust and the
+# persons identified as the document authors. All rights reserved.
+
+9113-3.2-1 MUST_NOT §3.2 Starting HTTP/2 for "https" URIs
+	The "h2c" protocol identifier MUST NOT be sent by a client or
+	selected by a server; the "h2c" protocol identifier describes a
+	protocol that does not use TLS.
+
+9113-3.2-2 MUST §3.2 Starting HTTP/2 for "https" URIs
+	Once TLS negotiation is complete, both the client and the server
+	MUST send a connection preface (Section 3.4).
+
+9113-3.3-1 MUST §3.3 Starting HTTP/2 with Prior Knowledge
+	HTTP/2 connections over TLS MUST use protocol negotiation in TLS
+	[TLS-ALPN].
+
+9113-3.3-2 MUST §3.3 Starting HTTP/2 with Prior Knowledge
+	Likewise, the server MUST send a connection preface (Section 3.4).
+	n/a client: requirement on servers
+
+9113-3.4-1 MAY,MUST §3.4 HTTP/2 Connection Preface
+	This sequence MUST be followed by a SETTINGS frame (Section 6.5),
+	which MAY be empty.
+	n/a server: requirement on clients
+
+9113-3.4-2 MUST §3.4 HTTP/2 Connection Preface
+	The server connection preface consists of a potentially empty
+	SETTINGS frame (Section 6.5) that MUST be the first frame the
+	server sends in the HTTP/2 connection.
+	n/a client: requirement on servers
+
+9113-3.4-3 MUST §3.4 HTTP/2 Connection Preface
+	The SETTINGS frames received from a peer as part of the connection
+	preface MUST be acknowledged (see Section 6.5.3) after sending the
+	connection preface.
+
+9113-3.4-4 MUST §3.4 HTTP/2 Connection Preface
+	Clients and servers MUST treat an invalid connection preface as a
+	connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-3.4-5 MAY §3.4 HTTP/2 Connection Preface
+	A GOAWAY frame (Section 6.8) MAY be omitted in this case, since an
+	invalid preface indicates that the peer is not using HTTP/2.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-4.1-1 MUST_NOT §4.1 Frame Format
+	Values greater than 2^14 (16,384) MUST NOT be sent unless the
+	receiver has set a larger value for SETTINGS_MAX_FRAME_SIZE.
+
+9113-4.1-2 MUST §4.1 Frame Format
+	Implementations MUST ignore and discard frames of unknown types.
+
+9113-4.1-3 MUST §4.1 Frame Format
+	Unused flags MUST be ignored on receipt and MUST be left unset
+	(0x00) when sending.
+
+9113-4.1-4 MUST §4.1 Frame Format
+	The semantics of this bit are undefined, and the bit MUST remain
+	unset (0x00) when sending and MUST be ignored when receiving.
+
+9113-4.2-1 MUST §4.2 Frame Size
+	All implementations MUST be capable of receiving and minimally
+	processing frames up to 2^14 octets in length, plus the 9-octet
+	frame header (Section 4.1).
+
+9113-4.2-2 MUST §4.2 Frame Size
+	An endpoint MUST send an error code of FRAME_SIZE_ERROR if a frame
+	exceeds the size defined in SETTINGS_MAX_FRAME_SIZE, exceeds any
+	limit defined for the frame type, or is too small to contain
+	mandatory frame data.
+
+9113-4.2-3 MUST §4.2 Frame Size
+	A frame size error in a frame that could alter the state of the
+	entire connection MUST be treated as a connection error (Section
+	5.4.1); this includes any frame carrying a field block (Section
+	4.3) (that is, HEADERS, PUSH_PROMISE, and CONTINUATION), a
+	SETTINGS frame, and any frame with a stream identifier of 0.
+
+9113-4.3-1 MUST §4.3 Field Section Compression and Decompression
+	Field blocks MUST be transmitted as a contiguous sequence of
+	frames, with no interleaved frames of any other type or from any
+	other stream.
+
+9113-4.3-2 MUST §4.3 Field Section Compression and Decompression
+	A receiver MUST terminate the connection with a connection error
+	(Section 5.4.1) of type COMPRESSION_ERROR if it does not
+	decompress a field block.
+
+9113-4.3-3 MUST §4.3 Field Section Compression and Decompression
+	A decoding error in a field block MUST be treated as a connection
+	error (Section 5.4.1) of type COMPRESSION_ERROR.
+
+9113-4.3.1-1 MUST §4.3.1 Compression State
+	Once an endpoint acknowledges a change to
+	SETTINGS_HEADER_TABLE_SIZE that reduces the maximum below the
+	current size of the dynamic table, its HPACK encoder MUST start
+	the next field block with a Dynamic Table Size Update instruction
+	that sets the dynamic table to a size that is less than or equal
+	to the reduced maximum; see Section 4.2 of [COMPRESSION].
+
+9113-4.3.1-2 MUST §4.3.1 Compression State
+	An endpoint MUST treat a field block that follows an
+	acknowledgment of the reduction to the maximum dynamic table size
+	as a connection error (Section 5.4.1) of type COMPRESSION_ERROR if
+	it does not start with a conformant Dynamic Table Size Update
+	instruction.
+
+9113-5.1-1 MUST §5.1 Stream States
+	Receiving any frame other than HEADERS or PRIORITY on a stream in
+	this state MUST be treated as a connection error (Section 5.4.1)
+	of type PROTOCOL_ERROR.
+
+9113-5.1-2 MUST §5.1 Stream States
+	If this stream is initiated by the server, as described in Section
+	5.1.1, then receiving a HEADERS frame MUST also be treated as a
+	connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-5.1-3 MUST_NOT §5.1 Stream States
+	An endpoint MUST NOT send any type of frame other than HEADERS,
+	RST_STREAM, or PRIORITY in this state.
+	n/a client: requirement on servers
+	n/a server: the Go server doesn't implement server push
+
+9113-5.1-4 MAY §5.1 Stream States
+	A PRIORITY or WINDOW_UPDATE frame MAY be received in this state.
+	n/a client: requirement on servers
+	n/a server: the Go server doesn't implement server push
+
+9113-5.1-5 MUST §5.1 Stream States
+	Receiving any type of frame other than RST_STREAM, PRIORITY, or
+	WINDOW_UPDATE on a stream in this state MUST be treated as a
+	connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a client: requirement on servers
+	n/a server: the Go server doesn't implement server push
+
+9113-5.1-6 MUST_NOT §5.1 Stream States
+	An endpoint MUST NOT send any type of frame other than RST_STREAM,
+	WINDOW_UPDATE, or PRIORITY in this state.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-5.1-7 MUST §5.1 Stream States
+	Receiving any type of frame other than HEADERS, RST_STREAM, or
+	PRIORITY on a stream in this state MUST be treated as a connection
+	error (Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-5.1-8 MUST §5.1 Stream States
+	If an endpoint receives additional frames, other than
+	WINDOW_UPDATE, PRIORITY, or RST_STREAM, for a stream that is in
+	this state, it MUST respond with a stream error (Section 5.4.2) of
+	type STREAM_CLOSED.
+	n/a client: the Go client resets its request stream (RST_STREAM NO_ERROR) when the response ends while it is still sending, so it doesn't remain half-closed (remote)
+
+9113-5.1-9 MUST_NOT §5.1 Stream States
+	An endpoint MUST NOT send frames other than PRIORITY on a closed
+	stream.
+
+9113-5.1-10 MAY §5.1 Stream States
+	An endpoint MAY treat receipt of any other type of frame on a
+	closed stream as a connection error (Section 5.4.1) of type
+	STREAM_CLOSED, except as noted below.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.1-11 MUST §5.1 Stream States
+	An endpoint MUST minimally process and then discard any frames it
+	receives in this state.
+
+9113-5.1-12 MAY §5.1 Stream States
+	Endpoints MAY use other signals to detect that a peer has received
+	the frames that caused the stream to enter the "closed" state and
+	treat receipt of any frame other than PRIORITY as a connection
+	error (Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.1-13 SHOULD_NOT §5.1 Stream States
+	Endpoints SHOULD NOT use timers for this purpose.
+	n/a client: internal implementation choice, not observable
+	n/a server: internal implementation choice, not observable
+
+9113-5.1-14 SHOULD §5.1 Stream States
+	In the absence of more specific rules, implementations SHOULD
+	treat the receipt of a frame that is not expressly permitted in
+	the description of a state as a connection error (Section 5.4.1)
+	of type PROTOCOL_ERROR.
+
+9113-5.1.1-1 MUST §5.1.1 Stream Identifiers
+	Streams initiated by a client MUST use odd-numbered stream
+	identifiers; those initiated by the server MUST use even-numbered
+	stream identifiers.
+
+9113-5.1.1-2 MUST §5.1.1 Stream Identifiers
+	The identifier of a newly established stream MUST be numerically
+	greater than all streams that the initiating endpoint has opened
+	or reserved.
+
+9113-5.1.1-3 MUST §5.1.1 Stream Identifiers
+	An endpoint that receives an unexpected stream identifier MUST
+	respond with a connection error (Section 5.4.1) of type
+	PROTOCOL_ERROR.
+
+9113-5.1.2-1 MUST_NOT §5.1.2 Stream Concurrency
+	Endpoints MUST NOT exceed the limit set by their peer.
+
+9113-5.1.2-2 MUST §5.1.2 Stream Concurrency
+	An endpoint that receives a HEADERS frame that causes its
+	advertised concurrent stream limit to be exceeded MUST treat this
+	as a stream error (Section 5.4.2) of type PROTOCOL_ERROR or
+	REFUSED_STREAM.
+	n/a client: servers open streams only by server push, which the Go client disables
+
+9113-5.2.1-1 MAY §5.2.1 Flow-Control Principles
+	A receiver MAY choose to set any window size that it desires for
+	each stream and for the entire connection.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.2.1-2 MUST §5.2.1 Flow-Control Principles
+	A sender MUST respect flow-control limits imposed by a receiver.
+
+9113-5.2.2-1 MUST §5.2.2 Appropriate Use of Flow Control
+	Endpoints MUST read and process HTTP/2 frames from the TCP receive
+	buffer as soon as data is available.
+
+9113-5.3.2-1 SHOULD §5.3.2 Priority Signaling in This Document
+	Servers SHOULD use other contextual information in determining
+	priority of requests in the absence of any priority signals.
+	n/a client: requirement on servers
+	n/a server: scheduling policy, not reliably observable by an interop test
+
+9113-5.3.2-2 MAY §5.3.2 Priority Signaling in This Document
+	Servers MAY interpret the complete absence of signals as an
+	indication that the client has not implemented the feature.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.4-1 MAY,SHOULD §5.4 Error Handling
+	Implementations MAY discover multiple errors during processing,
+	but they SHOULD report at most one stream and one connection error
+	as a result.
+
+9113-5.4-2 SHOULD §5.4 Error Handling
+	In comparison, the protocol permits multiple GOAWAY frames, though
+	an endpoint SHOULD report just one type of connection error unless
+	an error is encountered during graceful shutdown.
+
+9113-5.4-3 MAY §5.4 Error Handling
+	If this occurs, an endpoint MAY send an additional GOAWAY frame
+	with the new error code, in addition to any prior GOAWAY that
+	contained NO_ERROR.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.4-4 MAY §5.4 Error Handling
+	If an endpoint detects multiple different errors, it MAY choose to
+	report any one of those errors.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.4-5 MUST §5.4 Error Handling
+	If a frame causes a connection error, that error MUST be reported.
+
+9113-5.4-6 MAY §5.4 Error Handling
+	Additionally, an endpoint MAY use any applicable error code when
+	it detects an error condition; a generic error code (such as
+	PROTOCOL_ERROR or INTERNAL_ERROR) can always be used in place of
+	more specific error codes.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.4.1-1 SHOULD §5.4.1 Connection Error Handling
+	An endpoint that encounters a connection error SHOULD first send a
+	GOAWAY frame (Section 6.8) with the stream identifier of the last
+	stream that it successfully received from its peer.
+
+9113-5.4.1-2 MUST §5.4.1 Connection Error Handling
+	After sending the GOAWAY frame for an error condition, the
+	endpoint MUST close the TCP connection.
+
+9113-5.4.1-3 MAY §5.4.1 Connection Error Handling
+	In particular, an endpoint MAY choose to treat a stream error as a
+	connection error.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.4.1-4 SHOULD §5.4.1 Connection Error Handling
+	Endpoints SHOULD send a GOAWAY frame when ending a connection,
+	providing that circumstances permit it.
+
+9113-5.4.2-1 MUST §5.4.2 Stream Error Handling
+	The peer that sends the RST_STREAM frame MUST be prepared to
+	receive any frames that were sent or enqueued for sending by the
+	remote peer.
+
+9113-5.4.2-2 SHOULD_NOT §5.4.2 Stream Error Handling
+	Normally, an endpoint SHOULD NOT send more than one RST_STREAM
+	frame for any stream.
+
+9113-5.4.2-3 MAY §5.4.2 Stream Error Handling
+	However, an endpoint MAY send additional RST_STREAM frames if it
+	receives frames on a closed stream after more than a round-trip
+	time.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-5.4.2-4 MUST_NOT §5.4.2 Stream Error Handling
+	To avoid looping, an endpoint MUST NOT send a RST_STREAM in
+	response to a RST_STREAM frame.
+
+9113-5.5-1 MUST §5.5 Extending HTTP/2
+	Implementations MUST ignore unknown or unsupported values in all
+	extensible protocol elements.
+
+9113-5.5-2 MUST §5.5 Extending HTTP/2
+	Implementations MUST discard frames that have unknown or
+	unsupported types.
+
+9113-5.5-3 MUST §5.5 Extending HTTP/2
+	However, extension frames that appear in the middle of a field
+	block (Section 4.3) are not permitted; these MUST be treated as a
+	connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-5.5-4 SHOULD §5.5 Extending HTTP/2
+	Extensions SHOULD avoid changing protocol elements defined in this
+	document or elements for which no extension mechanism is defined.
+	n/a client: requirement on the design of extensions
+	n/a server: requirement on the design of extensions
+
+9113-5.5-5 MUST §5.5 Extending HTTP/2
+	An extension that changes existing protocol elements or state MUST
+	be negotiated before being used.
+
+9113-5.5-6 MUST §5.5 Extending HTTP/2
+	If a setting is used for extension negotiation, the initial value
+	MUST be defined in such a fashion that the extension is initially
+	disabled.
+	n/a client: requirement on the design of extensions
+	n/a server: requirement on the design of extensions
+
+9113-6.1-1 MAY §6.1 DATA
+	DATA frames MAY also contain padding.
+
+9113-6.1-2 MUST §6.1 DATA
+	Padding octets MUST be set to zero when sending.
+
+9113-6.1-3 MAY §6.1 DATA
+	A receiver is not obligated to verify padding but MAY treat non-
+	zero padding as a connection error (Section 5.4.1) of type
+	PROTOCOL_ERROR.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.1-4 MUST §6.1 DATA
+	DATA frames MUST be associated with a stream.
+
+9113-6.1-5 MUST §6.1 DATA
+	If a DATA frame is received whose Stream Identifier field is 0x00,
+	the recipient MUST respond with a connection error (Section 5.4.1)
+	of type PROTOCOL_ERROR.
+
+9113-6.1-6 MUST §6.1 DATA
+	If a DATA frame is received whose stream is not in the "open" or
+	"half-closed (local)" state, the recipient MUST respond with a
+	stream error (Section 5.4.2) of type STREAM_CLOSED.
+
+9113-6.1-7 MUST §6.1 DATA
+	If the length of the padding is the length of the frame payload or
+	greater, the recipient MUST treat this as a connection error
+	(Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.2-1 MUST §6.2 HEADERS
+	Padding octets MUST be set to zero when sending.
+
+9113-6.2-2 MAY §6.2 HEADERS
+	A receiver is not obligated to verify padding but MAY treat non-
+	zero padding as a connection error (Section 5.4.1) of type
+	PROTOCOL_ERROR.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.2-3 MUST §6.2 HEADERS
+	A HEADERS frame without the END_HEADERS flag set MUST be followed
+	by a CONTINUATION frame for the same stream.
+
+9113-6.2-4 MUST §6.2 HEADERS
+	A receiver MUST treat the receipt of any other type of frame or a
+	frame on a different stream as a connection error (Section 5.4.1)
+	of type PROTOCOL_ERROR.
+
+9113-6.2-5 MUST §6.2 HEADERS
+	HEADERS frames MUST be associated with a stream.
+
+9113-6.2-6 MUST §6.2 HEADERS
+	If a HEADERS frame is received whose Stream Identifier field is
+	0x00, the recipient MUST respond with a connection error (Section
+	5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.2-7 MUST §6.2 HEADERS
+	If the length of the padding is the length of the frame payload or
+	greater, the recipient MUST treat this as a connection error
+	(Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.3-1 MUST §6.3 PRIORITY
+	If a PRIORITY frame is received with a stream identifier of 0x00,
+	the recipient MUST respond with a connection error (Section 5.4.1)
+	of type PROTOCOL_ERROR.
+
+9113-6.3-2 MUST §6.3 PRIORITY
+	A PRIORITY frame with a length other than 5 octets MUST be treated
+	as a stream error (Section 5.4.2) of type FRAME_SIZE_ERROR.
+
+9113-6.4-1 MUST_NOT §6.4 RST_STREAM
+	After receiving a RST_STREAM on a stream, the receiver MUST NOT
+	send additional frames for that stream, except for PRIORITY.
+
+9113-6.4-2 MUST §6.4 RST_STREAM
+	However, after sending the RST_STREAM, the sending endpoint MUST
+	be prepared to receive and process additional frames sent on the
+	stream that might have been sent by the peer prior to the arrival
+	of the RST_STREAM.
+
+9113-6.4-3 MUST §6.4 RST_STREAM
+	RST_STREAM frames MUST be associated with a stream.
+
+9113-6.4-4 MUST §6.4 RST_STREAM
+	If a RST_STREAM frame is received with a stream identifier of
+	0x00, the recipient MUST treat this as a connection error (Section
+	5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.4-5 MUST_NOT §6.4 RST_STREAM
+	RST_STREAM frames MUST NOT be sent for a stream in the "idle"
+	state.
+
+9113-6.4-6 MUST §6.4 RST_STREAM
+	If a RST_STREAM frame identifying an idle stream is received, the
+	recipient MUST treat this as a connection error (Section 5.4.1) of
+	type PROTOCOL_ERROR.
+
+9113-6.4-7 MUST §6.4 RST_STREAM
+	A RST_STREAM frame with a length other than 4 octets MUST be
+	treated as a connection error (Section 5.4.1) of type
+	FRAME_SIZE_ERROR.
+
+9113-6.5-1 MAY,MUST §6.5 SETTINGS
+	A SETTINGS frame MUST be sent by both endpoints at the start of a
+	connection and MAY be sent at any other time by either endpoint
+	over the lifetime of the connection.
+
+9113-6.5-2 MUST §6.5 SETTINGS
+	Implementations MUST support all of the settings defined by this
+	specification.
+
+9113-6.5-3 MUST §6.5 SETTINGS
+	When this bit is set, the frame payload of the SETTINGS frame MUST
+	be empty.
+
+9113-6.5-4 MUST §6.5 SETTINGS
+	Receipt of a SETTINGS frame with the ACK flag set and a length
+	field value other than 0 MUST be treated as a connection error
+	(Section 5.4.1) of type FRAME_SIZE_ERROR.
+
+9113-6.5-5 MUST §6.5 SETTINGS
+	The stream identifier for a SETTINGS frame MUST be zero (0x00).
+
+9113-6.5-6 MUST §6.5 SETTINGS
+	If an endpoint receives a SETTINGS frame whose Stream Identifier
+	field is anything other than 0x00, the endpoint MUST respond with
+	a connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.5-7 MUST §6.5 SETTINGS
+	A badly formed or incomplete SETTINGS frame MUST be treated as a
+	connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.5-8 MUST §6.5 SETTINGS
+	A SETTINGS frame with a length other than a multiple of 6 octets
+	MUST be treated as a connection error (Section 5.4.1) of type
+	FRAME_SIZE_ERROR.
+
+9113-6.5.2-1 MUST_NOT §6.5.2 Defined Settings
+	A server MUST NOT send a PUSH_PROMISE frame if it receives this
+	parameter set to a value of 0; see Section 8.4.
+	n/a client: requirement on servers
+
+9113-6.5.2-2 MUST §6.5.2 Defined Settings
+	A client that has both set this parameter to 0 and had it
+	acknowledged MUST treat the receipt of a PUSH_PROMISE frame as a
+	connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a server: requirement on clients
+
+9113-6.5.2-3 MUST §6.5.2 Defined Settings
+	Any value other than 0 or 1 MUST be treated as a connection error
+	(Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.5.2-4 MUST_NOT §6.5.2 Defined Settings
+	A server MUST NOT explicitly set this value to 1.
+	n/a client: requirement on servers
+
+9113-6.5.2-5 MAY,MUST §6.5.2 Defined Settings
+	A server MAY choose to omit this setting when it sends a SETTINGS
+	frame, but if a server does include a value, it MUST be 0.
+	n/a client: requirement on servers
+
+9113-6.5.2-6 MUST §6.5.2 Defined Settings
+	A client MUST treat receipt of a SETTINGS frame with
+	SETTINGS_ENABLE_PUSH set to 1 as a connection error (Section
+	5.4.1) of type PROTOCOL_ERROR.
+	n/a server: requirement on clients
+
+9113-6.5.2-7 SHOULD_NOT §6.5.2 Defined Settings
+	A value of 0 for SETTINGS_MAX_CONCURRENT_STREAMS SHOULD NOT be
+	treated as special by endpoints.
+	n/a server: a client's SETTINGS_MAX_CONCURRENT_STREAMS limits only server-initiated (push) streams, which the Go server doesn't open
+
+9113-6.5.2-8 SHOULD §6.5.2 Defined Settings
+	Servers SHOULD only set a zero value for short durations; if a
+	server does not wish to accept requests, closing the connection is
+	more appropriate.
+	n/a client: requirement on servers
+	n/a server: the Go server never advertises SETTINGS_MAX_CONCURRENT_STREAMS=0
+
+9113-6.5.2-9 MUST §6.5.2 Defined Settings
+	Values above the maximum flow-control window size of 2^31-1 MUST
+	be treated as a connection error (Section 5.4.1) of type
+	FLOW_CONTROL_ERROR.
+
+9113-6.5.2-10 MUST §6.5.2 Defined Settings
+	The value advertised by an endpoint MUST be between this initial
+	value and the maximum allowed frame size (2^24-1 or 16,777,215
+	octets), inclusive.
+
+9113-6.5.2-11 MUST §6.5.2 Defined Settings
+	Values outside this range MUST be treated as a connection error
+	(Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.5.2-12 MAY §6.5.2 Defined Settings
+	For any given request, a lower limit than what is advertised MAY
+	be enforced.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.5.2-13 MUST §6.5.2 Defined Settings
+	An endpoint that receives a SETTINGS frame with any unknown or
+	unsupported identifier MUST ignore that setting.
+
+9113-6.5.3-1 MUST §6.5.3 Settings Synchronization
+	In order to provide such synchronization timepoints, the recipient
+	of a SETTINGS frame in which the ACK flag is not set MUST apply
+	the updated settings as soon as possible upon receipt.
+
+9113-6.5.3-2 MUST §6.5.3 Settings Synchronization
+	The values in the SETTINGS frame MUST be processed in the order
+	they appear, with no other frame processing between values.
+
+9113-6.5.3-3 MUST §6.5.3 Settings Synchronization
+	Unsupported settings MUST be ignored.
+
+9113-6.5.3-4 MUST §6.5.3 Settings Synchronization
+	Once all values have been processed, the recipient MUST
+	immediately emit a SETTINGS frame with the ACK flag set.
+
+9113-6.5.3-5 MAY §6.5.3 Settings Synchronization
+	If the sender of a SETTINGS frame does not receive an
+	acknowledgment within a reasonable amount of time, it MAY issue a
+	connection error (Section 5.4.1) of type SETTINGS_TIMEOUT.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.6-1 MUST §6.6 PUSH_PROMISE
+	The promised stream identifier MUST be a valid choice for the next
+	stream sent by the sender (see "new stream identifier" in Section
+	5.1.1).
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push (the validator checks pushes)
+
+9113-6.6-2 MUST §6.6 PUSH_PROMISE
+	Padding octets MUST be set to zero when sending.
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-6.6-3 MAY §6.6 PUSH_PROMISE
+	A receiver is not obligated to verify padding but MAY treat non-
+	zero padding as a connection error (Section 5.4.1) of type
+	PROTOCOL_ERROR.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.6-4 MUST §6.6 PUSH_PROMISE
+	A PUSH_PROMISE frame without the END_HEADERS flag set MUST be
+	followed by a CONTINUATION frame for the same stream.
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-6.6-5 MUST §6.6 PUSH_PROMISE
+	A receiver MUST treat the receipt of any other type of frame or a
+	frame on a different stream as a connection error (Section 5.4.1)
+	of type PROTOCOL_ERROR.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-6.6-6 MUST §6.6 PUSH_PROMISE
+	PUSH_PROMISE frames MUST only be sent on a peer-initiated stream
+	that is in either the "open" or "half-closed (remote)" state.
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-6.6-7 MUST §6.6 PUSH_PROMISE
+	If the Stream Identifier field specifies the value 0x00, a
+	recipient MUST respond with a connection error (Section 5.4.1) of
+	type PROTOCOL_ERROR.
+
+9113-6.6-8 MUST_NOT §6.6 PUSH_PROMISE
+	PUSH_PROMISE MUST NOT be sent if the SETTINGS_ENABLE_PUSH setting
+	of the peer endpoint is set to 0.
+
+9113-6.6-9 MUST §6.6 PUSH_PROMISE
+	An endpoint that has set this setting and has received
+	acknowledgment MUST treat the receipt of a PUSH_PROMISE frame as a
+	connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.6-10 MUST,MUST_NOT §6.6 PUSH_PROMISE
+	A sender MUST NOT send a PUSH_PROMISE on a stream unless that
+	stream is either "open" or "half-closed (remote)"; the sender MUST
+	ensure that the promised stream is a valid choice for a new stream
+	identifier (Section 5.1.1) (that is, the promised stream MUST be
+	in the "idle" state).
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-6.6-11 MUST §6.6 PUSH_PROMISE
+	A receiver MUST treat the receipt of a PUSH_PROMISE on a stream
+	that is neither "open" nor "half-closed (local)" as a connection
+	error (Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-6.6-12 MUST §6.6 PUSH_PROMISE
+	However, an endpoint that has sent RST_STREAM on the associated
+	stream MUST handle PUSH_PROMISE frames that might have been
+	created before the RST_STREAM frame is received and processed.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-6.6-13 MUST §6.6 PUSH_PROMISE
+	A receiver MUST treat the receipt of a PUSH_PROMISE that promises
+	an illegal stream identifier (Section 5.1.1) as a connection error
+	(Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-6.6-14 MUST §6.6 PUSH_PROMISE
+	If the length of the padding is the length of the frame payload or
+	greater, the recipient MUST treat this as a connection error
+	(Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-6.7-1 MUST §6.7 PING
+	In addition to the frame header, PING frames MUST contain 8 octets
+	of opaque data in the frame payload.
+
+9113-6.7-2 MUST §6.7 PING
+	Receivers of a PING frame that does not include an ACK flag MUST
+	send a PING frame with the ACK flag set in response, with an
+	identical frame payload.
+
+9113-6.7-3 SHOULD §6.7 PING
+	PING responses SHOULD be given higher priority than any other
+	frame.
+	n/a client: scheduling policy, not reliably observable by an interop test
+	n/a server: scheduling policy, not reliably observable by an interop test
+
+9113-6.7-4 MUST §6.7 PING
+	An endpoint MUST set this flag in PING responses.
+
+9113-6.7-5 MUST_NOT §6.7 PING
+	An endpoint MUST NOT respond to PING frames containing this flag.
+
+9113-6.7-6 MUST §6.7 PING
+	If a PING frame is received with a Stream Identifier field value
+	other than 0x00, the recipient MUST respond with a connection
+	error (Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.7-7 MUST §6.7 PING
+	Receipt of a PING frame with a length field value other than 8
+	MUST be treated as a connection error (Section 5.4.1) of type
+	FRAME_SIZE_ERROR.
+
+9113-6.8-1 MUST_NOT §6.8 GOAWAY
+	Receivers of a GOAWAY frame MUST NOT open additional streams on
+	the connection, although a new connection can be established for
+	new streams.
+
+9113-6.8-2 SHOULD §6.8 GOAWAY
+	Endpoints SHOULD always send a GOAWAY frame before closing a
+	connection so that the remote peer can know whether a stream has
+	been partially processed or not.
+
+9113-6.8-3 SHOULD §6.8 GOAWAY
+	A GOAWAY frame might not immediately precede closing of the
+	connection; a receiver of a GOAWAY that has no more use for the
+	connection SHOULD still send a GOAWAY frame before terminating the
+	connection.
+
+9113-6.8-4 MUST §6.8 GOAWAY
+	An endpoint MUST treat a GOAWAY frame with a stream identifier
+	other than 0x00 as a connection error (Section 5.4.1) of type
+	PROTOCOL_ERROR.
+
+9113-6.8-5 MAY §6.8 GOAWAY
+	An endpoint MAY send multiple GOAWAY frames if circumstances
+	change.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.8-6 MUST_NOT §6.8 GOAWAY
+	Endpoints MUST NOT increase the value they send in the last stream
+	identifier, since the peers might already have retried unprocessed
+	requests on another connection.
+
+9113-6.8-7 SHOULD §6.8 GOAWAY
+	A server that is attempting to gracefully shut down a connection
+	SHOULD send an initial GOAWAY frame with the last stream
+	identifier set to 2^31-1 and a NO_ERROR code.
+	n/a client: requirement on servers
+
+9113-6.8-8 MAY §6.8 GOAWAY
+	After allowing time for any in-flight stream creation (at least
+	one round-trip time), the server MAY send another GOAWAY frame
+	with an updated last stream identifier.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.8-9 MUST §6.8 GOAWAY
+	For instance, HEADERS, PUSH_PROMISE, and CONTINUATION frames MUST
+	be minimally processed to ensure that the state maintained for
+	field section compression is consistent (see Section 4.3);
+	similarly, DATA frames MUST be counted toward the connection flow-
+	control window.
+	n/a client: the Go client only sends GOAWAY when closing the connection (via net/http)
+
+9113-6.8-10 MAY §6.8 GOAWAY
+	Endpoints MAY append opaque data to the frame payload of any
+	GOAWAY frame.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.8-11 MUST §6.8 GOAWAY
+	Logged or otherwise persistently stored debug data MUST have
+	adequate safeguards to prevent unauthorized access.
+	n/a client: operational requirement on logging
+	n/a server: operational requirement on logging
+
+9113-6.9-1 MUST §6.9 WINDOW_UPDATE
+	Frames that are exempt from flow control MUST be accepted and
+	processed, unless the receiver is unable to assign resources to
+	handling the frame.
+
+9113-6.9-2 MAY §6.9 WINDOW_UPDATE
+	A receiver MAY respond with a stream error (Section 5.4.2) or
+	connection error (Section 5.4.1) of type FLOW_CONTROL_ERROR if it
+	is unable to accept a frame.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.9-3 MUST §6.9 WINDOW_UPDATE
+	A receiver MUST treat the receipt of a WINDOW_UPDATE frame with a
+	flow-control window increment of 0 as a stream error (Section
+	5.4.2) of type PROTOCOL_ERROR; errors on the connection flow-
+	control window MUST be treated as a connection error (Section
+	5.4.1).
+
+9113-6.9-4 MUST_NOT §6.9 WINDOW_UPDATE
+	A receiver MUST NOT treat this as an error (see Section 5.1).
+
+9113-6.9-5 MUST §6.9 WINDOW_UPDATE
+	A receiver that receives a flow-controlled frame MUST always
+	account for its contribution against the connection flow-control
+	window, unless the receiver treats this as a connection error
+	(Section 5.4.1).
+
+9113-6.9-6 MUST §6.9 WINDOW_UPDATE
+	A WINDOW_UPDATE frame with a length other than 4 octets MUST be
+	treated as a connection error (Section 5.4.1) of type
+	FRAME_SIZE_ERROR.
+
+9113-6.9.1-1 MUST_NOT §6.9.1 The Flow-Control Window
+	The sender MUST NOT send a flow-controlled frame with a length
+	that exceeds the space available in either of the flow-control
+	windows advertised by the receiver.
+
+9113-6.9.1-2 MAY §6.9.1 The Flow-Control Window
+	Frames with zero length with the END_STREAM flag set (that is, an
+	empty DATA frame) MAY be sent if there is no available space in
+	either flow-control window.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.9.1-3 MUST_NOT §6.9.1 The Flow-Control Window
+	A sender MUST NOT allow a flow-control window to exceed 2^31-1
+	octets.
+
+9113-6.9.1-4 MUST §6.9.1 The Flow-Control Window
+	If a sender receives a WINDOW_UPDATE that causes a flow- control
+	window to exceed this maximum, it MUST terminate either the stream
+	or the connection, as appropriate.
+
+9113-6.9.2-1 MUST §6.9.2 Initial Flow-Control Window Size
+	When the value of SETTINGS_INITIAL_WINDOW_SIZE changes, a receiver
+	MUST adjust the size of all stream flow-control windows that it
+	maintains by the difference between the new value and the old
+	value.
+
+9113-6.9.2-2 MUST,MUST_NOT §6.9.2 Initial Flow-Control Window Size
+	A sender MUST track the negative flow-control window and MUST NOT
+	send new flow- controlled frames until it receives WINDOW_UPDATE
+	frames that cause the flow-control window to become positive.
+
+9113-6.9.2-3 MUST §6.9.2 Initial Flow-Control Window Size
+	An endpoint MUST treat a change to SETTINGS_INITIAL_WINDOW_SIZE
+	that causes any flow-control window to exceed the maximum size as
+	a connection error (Section 5.4.1) of type FLOW_CONTROL_ERROR.
+
+9113-6.9.3-1 MUST §6.9.3 Reducing the Stream Window Size
+	However, the receiver MUST be prepared to receive data that
+	exceeds this window size, since the sender might send data that
+	exceeds the lower limit prior to processing the SETTINGS frame.
+	n/a client: the Go client sends its SETTINGS once, before any request, so a server can't send data before receiving them
+
+9113-6.9.3-2 MAY §6.9.3 Reducing the Stream Window Size
+	After sending a SETTINGS frame that reduces the initial flow-
+	control window size, a receiver MAY continue to process streams
+	that exceed flow-control limits.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.9.3-3 MAY §6.9.3 Reducing the Stream Window Size
+	The receiver MAY instead send a RST_STREAM with an error code of
+	FLOW_CONTROL_ERROR for the affected streams.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-6.10-1 MUST §6.10 CONTINUATION
+	If the END_HEADERS flag is not set, this frame MUST be followed by
+	another CONTINUATION frame.
+
+9113-6.10-2 MUST §6.10 CONTINUATION
+	A receiver MUST treat the receipt of any other type of frame or a
+	frame on a different stream as a connection error (Section 5.4.1)
+	of type PROTOCOL_ERROR.
+
+9113-6.10-3 MUST §6.10 CONTINUATION
+	CONTINUATION frames MUST be associated with a stream.
+
+9113-6.10-4 MUST §6.10 CONTINUATION
+	If a CONTINUATION frame is received with a Stream Identifier field
+	of 0x00, the recipient MUST respond with a connection error
+	(Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-6.10-5 MUST §6.10 CONTINUATION
+	A CONTINUATION frame MUST be preceded by a HEADERS, PUSH_PROMISE
+	or CONTINUATION frame without the END_HEADERS flag set.
+
+9113-6.10-6 MUST §6.10 CONTINUATION
+	A recipient that observes violation of this rule MUST respond with
+	a connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+
+9113-7-1 MUST_NOT §7 Error Codes
+	Unknown or unsupported error codes MUST NOT trigger any special
+	behavior.
+
+9113-7-2 MAY §7 Error Codes
+	These MAY be treated by an implementation as being equivalent to
+	INTERNAL_ERROR.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-8.1-1 MAY §8.1 HTTP Message Framing
+	For a response only, a server MAY send any number of interim
+	responses before the HEADERS frame containing a final response.
+	n/a server: requirement on servers
+
+9113-8.1-2 MUST_NOT §8.1 HTTP Message Framing
+	Other frames (from any stream) MUST NOT occur between the HEADERS
+	frame and any CONTINUATION frames that might follow.
+
+9113-8.1-3 MUST_NOT §8.1 HTTP Message Framing
+	Trailers MUST NOT include pseudo-header fields (Section 8.3).
+
+9113-8.1-4 MUST §8.1 HTTP Message Framing
+	An endpoint that receives pseudo-header fields in trailers MUST
+	treat the request or response as malformed (Section 8.1.1).
+
+9113-8.1-5 MUST §8.1 HTTP Message Framing
+	An endpoint that receives a HEADERS frame without the END_STREAM
+	flag set after receiving the HEADERS frame that opens a request or
+	after receiving a final (non-informational) status code MUST treat
+	the corresponding request or response as malformed (Section
+	8.1.1).
+
+9113-8.1-6 MAY §8.1 HTTP Message Framing
+	When this is true, a server MAY request that the client abort
+	transmission of a request without error by sending a RST_STREAM
+	with an error code of NO_ERROR after sending a complete response
+	(i.e., a frame with the END_STREAM flag set).
+	n/a server: requirement on servers
+
+9113-8.1-7 MUST_NOT §8.1 HTTP Message Framing
+	Clients MUST NOT discard responses as a result of receiving such a
+	RST_STREAM, though clients can always discard responses at their
+	discretion for other reasons.
+	n/a server: requirement on clients
+
+9113-8.1.1-1 MAY §8.1.1 Malformed Messages
+	A response that is defined to have no content, as described in
+	Section 6.4.1 of [HTTP], MAY have a non-zero content-length header
+	field, even though no content is included in DATA frames.
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-8.1.1-2 MUST_NOT §8.1.1 Malformed Messages
+	Intermediaries that process HTTP requests or responses (i.e., any
+	intermediary not acting as a tunnel) MUST NOT forward a malformed
+	request or response.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-8.1.1-3 MUST §8.1.1 Malformed Messages
+	Malformed requests or responses that are detected MUST be treated
+	as a stream error (Section 5.4.2) of type PROTOCOL_ERROR.
+
+9113-8.1.1-4 MAY §8.1.1 Malformed Messages
+	For malformed requests, a server MAY send an HTTP response prior
+	to closing or resetting the stream.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-8.1.1-5 MUST_NOT §8.1.1 Malformed Messages
+	Clients MUST NOT accept a malformed response.
+	n/a server: requirement on clients
+
+9113-8.1.1-6 MAY §8.1.1 Malformed Messages
+	A server MAY generate a final response before receiving an entire
+	request when the response does not depend on the remainder of the
+	request being correct.
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-8.2-1 MUST §8.2 HTTP Fields
+	Field names MUST be converted to lowercase when constructing an
+	HTTP/2 message.
+
+9113-8.2.1-1 SHOULD §8.2.1 Field Validity
+	HTTP/2 implementations SHOULD validate field names and values
+	according to their definitions in Sections 5.1 and 5.5 of [HTTP],
+	respectively, and treat messages that contain prohibited
+	characters as malformed (Section 8.1.1).
+
+9113-8.2.1-2 MUST §8.2.1 Field Validity
+	Implementations MUST perform the following minimal validation of
+	field names and values:
+
+9113-8.2.1-3 MUST_NOT §8.2.1 Field Validity
+	*  A field name MUST NOT contain characters in the ranges
+	0x00-0x20, 0x41-0x5a, or 0x7f-0xff (all ranges inclusive).
+
+9113-8.2.1-4 MUST_NOT §8.2.1 Field Validity
+	*  With the exception of pseudo-header fields (Section 8.3), which
+	have a name that starts with a single colon, field names MUST NOT
+	include a colon (ASCII COLON, 0x3a).
+
+9113-8.2.1-5 MUST_NOT §8.2.1 Field Validity
+	*  A field value MUST NOT contain the zero value (ASCII NUL,
+	0x00), line feed (ASCII LF, 0x0a), or carriage return (ASCII CR,
+	0x0d) at any position.
+
+9113-8.2.1-6 MUST_NOT §8.2.1 Field Validity
+	*  A field value MUST NOT start or end with an ASCII whitespace
+	character (ASCII SP or HTAB, 0x20 or 0x09).
+
+9113-8.2.1-7 MUST §8.2.1 Field Validity
+	A request or response that contains a field that violates any of
+	these conditions MUST be treated as malformed (Section 8.1.1).
+
+9113-8.2.1-8 MUST_NOT §8.2.1 Field Validity
+	In particular, an intermediary that does not process fields when
+	forwarding messages MUST NOT forward fields that contain any of
+	the values that are listed as prohibited above.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-8.2.1-9 SHOULD §8.2.1 Field Validity
+	When a request message violates one of these requirements, an
+	implementation SHOULD generate a 400 (Bad Request) status code
+	(see Section 15.5.1 of [HTTP]), unless a more suitable status code
+	is defined or the status code cannot be sent (e.g., because the
+	error occurs in a trailer field).
+	n/a client: requirement on servers
+
+9113-8.2.2-1 MUST_NOT §8.2.2 Connection-Specific Header Fields
+	An endpoint MUST NOT generate an HTTP/2 message containing
+	connection-specific header fields.
+
+9113-8.2.2-2 MUST §8.2.2 Connection-Specific Header Fields
+	Any message containing connection- specific header fields MUST be
+	treated as malformed (Section 8.1.1).
+
+9113-8.2.2-3 MAY,MUST_NOT §8.2.2 Connection-Specific Header Fields
+	The only exception to this is the TE header field, which MAY be
+	present in an HTTP/2 request; when it is, it MUST NOT contain any
+	value other than "trailers".
+
+9113-8.2.2-4 MUST §8.2.2 Connection-Specific Header Fields
+	An intermediary transforming an HTTP/1.x message to HTTP/2 MUST
+	remove connection-specific header fields as discussed in Section
+	7.6.1 of [HTTP], or their messages will be treated by other HTTP/2
+	endpoints as malformed (Section 8.1.1).
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-8.2.3-1 MAY §8.2.3 Compressing the Cookie Header Field
+	To allow for better compression efficiency, the Cookie header
+	field MAY be split into separate header fields, each with one or
+	more cookie-pairs.
+	n/a client: Cookie is a request field
+
+9113-8.2.3-2 MUST §8.2.3 Compressing the Cookie Header Field
+	If there are multiple Cookie header fields after decompression,
+	these MUST be concatenated into a single octet string using the
+	two-octet delimiter of 0x3b, 0x20 (the ASCII string "; ") before
+	being passed into a non-HTTP/2 context, such as an HTTP/1.1
+	connection, or a generic HTTP server application.
+	n/a client: Cookie is a request field
+
+9113-8.3-1 MUST_NOT §8.3 HTTP Control Data
+	Endpoints MUST NOT generate pseudo-header fields other than those
+	defined in this document.
+
+9113-8.3-2 MUST_NOT §8.3 HTTP Control Data
+	Pseudo-header fields defined for requests MUST NOT appear in
+	responses; pseudo-header fields defined for responses MUST NOT
+	appear in requests.
+
+9113-8.3-3 MUST_NOT §8.3 HTTP Control Data
+	Pseudo-header fields MUST NOT appear in a trailer section.
+
+9113-8.3-4 MUST §8.3 HTTP Control Data
+	Endpoints MUST treat a request or response that contains undefined
+	or invalid pseudo-header fields as malformed (Section 8.1.1).
+
+9113-8.3-5 MUST §8.3 HTTP Control Data
+	All pseudo-header fields MUST appear in a field block before all
+	regular field lines.
+
+9113-8.3-6 MUST §8.3 HTTP Control Data
+	Any request or response that contains a pseudo- header field that
+	appears in a field block after a regular field line MUST be
+	treated as malformed (Section 8.1.1).
+
+9113-8.3-7 MUST_NOT §8.3 HTTP Control Data
+	The same pseudo-header field name MUST NOT appear more than once
+	in a field block.
+
+9113-8.3-8 MUST §8.3 HTTP Control Data
+	A field block for an HTTP request or response that contains a
+	repeated pseudo-header field name MUST be treated as malformed
+	(Section 8.1.1).
+
+9113-8.3.1-1 MUST_NOT §8.3.1 Request Pseudo-Header Fields
+	The recipient of an HTTP/2 request MUST NOT use the Host header
+	field to determine the target URI if ":authority" is present.
+	n/a client: requirement on servers
+
+9113-8.3.1-2 MUST,MUST_NOT §8.3.1 Request Pseudo-Header Fields
+	Clients that generate HTTP/2 requests directly MUST use the
+	":authority" pseudo-header field to convey authority information,
+	unless there is no authority information to convey (in which case
+	it MUST NOT generate ":authority").
+	n/a server: requirement on clients
+
+9113-8.3.1-3 MUST_NOT §8.3.1 Request Pseudo-Header Fields
+	Clients MUST NOT generate a request with a Host header field that
+	differs from the ":authority" pseudo-header field.
+	n/a server: requirement on clients
+
+9113-8.3.1-4 SHOULD §8.3.1 Request Pseudo-Header Fields
+	A server SHOULD treat a request as malformed if it contains a Host
+	header field that identifies an entity that differs from the
+	entity in the ":authority" pseudo-header field.
+	n/a client: requirement on servers
+
+9113-8.3.1-5 MUST §8.3.1 Request Pseudo-Header Fields
+	An origin server can apply any normalization method, whereas other
+	servers MUST perform scheme-based normalization (see Section 6.2.3
+	of [RFC3986]) of the two fields.
+	n/a client: requirement on servers
+	n/a server: origin servers may apply any normalization
+
+9113-8.3.1-6 MUST,MUST_NOT §8.3.1 Request Pseudo-Header Fields
+	An intermediary that forwards a request over HTTP/2 MUST construct
+	an ":authority" pseudo-header field using the authority
+	information from the control data of the original request, unless
+	the original request's target URI does not contain authority
+	information (in which case it MUST NOT generate ":authority").
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-8.3.1-7 MUST §8.3.1 Request Pseudo-Header Fields
+	An intermediary that needs to generate a Host header field (which
+	might be necessary to construct an HTTP/1.1 request) MUST use the
+	value from the ":authority" pseudo-header field as the value of
+	the Host field, unless the intermediary also changes the request
+	target.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-8.3.1-8 MAY §8.3.1 Request Pseudo-Header Fields
+	An intermediary that forwards a request over HTTP/2 MAY retain any
+	Host header field.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-8.3.1-9 MUST_NOT §8.3.1 Request Pseudo-Header Fields
+	":authority" MUST NOT include the deprecated userinfo subcomponent
+	for "http" or "https" schemed URIs.
+
+9113-8.3.1-10 MUST,MUST_NOT §8.3.1 Request Pseudo-Header Fields
+	This pseudo-header field MUST NOT be empty for "http" or "https"
+	URIs; "http" or "https" URIs that do not contain a path component
+	MUST include a value of '/'.
+
+9113-8.3.1-11 MUST §8.3.1 Request Pseudo-Header Fields
+	-  an OPTIONS request for an "http" or "https" URI that does not
+	include a path component; these MUST include a ":path" pseudo-
+	header field with a value of '*' (see Section 7.1 of [HTTP]).
+
+9113-8.3.1-12 MUST §8.3.1 Request Pseudo-Header Fields
+	All HTTP/2 requests MUST include exactly one valid value for the
+	":method", ":scheme", and ":path" pseudo-header fields, unless
+	they are CONNECT requests (Section 8.5).
+
+9113-8.3.2-1 MUST §8.3.2 Response Pseudo-Header Fields
+	This pseudo-header field MUST be included in all responses,
+	including interim responses; otherwise, the response is malformed
+	(Section 8.1.1).
+
+9113-8.4-1 MUST §8.4 Server Push
+	Promised requests MUST be safe (see Section 9.2.1 of [HTTP]) and
+	cacheable (see Section 9.2.3 of [HTTP]).
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-8.4-2 MUST §8.4 Server Push
+	Clients that receive a promised request that is not cacheable,
+	that is not known to be safe, or that indicates the presence of
+	request content MUST reset the promised stream with a stream error
+	(Section 5.4.2) of type PROTOCOL_ERROR.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-8.4-3 MUST_NOT §8.4 Server Push
+	Pushed responses that are not cacheable MUST NOT be stored by any
+	HTTP cache.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: the Go server doesn't implement server push
+
+9113-8.4-4 MAY §8.4 Server Push
+	They MAY be made available to the application separately.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-8.4-5 MUST §8.4 Server Push
+	The server MUST include a value in the ":authority" pseudo-header
+	field for which the server is authoritative (see Section 10.1).
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-8.4-6 MUST §8.4 Server Push
+	A client MUST treat a PUSH_PROMISE for which the server is not
+	authoritative as a stream error (Section 5.4.2) of type
+	PROTOCOL_ERROR.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-8.4-7 MUST §8.4 Server Push
+	Thus, servers MUST treat the receipt of a PUSH_PROMISE frame as a
+	connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a client: requirement on servers
+
+9113-8.4.1-1 MUST §8.4.1 Push Requests
+	The header fields in PUSH_PROMISE and any subsequent CONTINUATION
+	frames MUST be a valid and complete set of request header fields
+	(Section 8.3.1).
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-8.4.1-2 MUST §8.4.1 Push Requests
+	The server MUST include a method in the ":method" pseudo-header
+	field that is safe and cacheable.
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-8.4.1-3 MUST §8.4.1 Push Requests
+	If a client receives a PUSH_PROMISE that does not include a
+	complete and valid set of header fields or the ":method" pseudo-
+	header field identifies a method that is not safe, it MUST respond
+	on the promised stream with a stream error (Section 5.4.2) of type
+	PROTOCOL_ERROR.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-8.4.1-4 SHOULD §8.4.1 Push Requests
+	The server SHOULD send PUSH_PROMISE (Section 6.6) frames prior to
+	sending any frames that reference the promised responses.
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-8.4.1-5 MUST_NOT §8.4.1 Push Requests
+	PUSH_PROMISE frames MUST NOT be sent by the client.
+	n/a server: requirement on clients
+
+9113-8.4.1-6 MUST §8.4.1 Push Requests
+	PUSH_PROMISE frames can be sent by the server on any client-
+	initiated stream, but the stream MUST be in either the "open" or
+	"half-closed (remote)" state with respect to the server.
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-8.4.2-1 SHOULD_NOT §8.4.2 Push Responses
+	Once a client receives a PUSH_PROMISE frame and chooses to accept
+	the pushed response, the client SHOULD NOT issue any requests for
+	the promised response until after the promised stream has closed.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-8.4.2-2 MUST §8.4.2 Push Responses
+	Clients receiving a pushed response MUST validate that either the
+	server is authoritative (see Section 10.1) or the proxy that
+	provided the pushed response is configured for the corresponding
+	request.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-8.5-1 MUST §8.5 The CONNECT Method
+	*  The ":scheme" and ":path" pseudo-header fields MUST be omitted.
+
+9113-8.5-2 MUST,MUST_NOT §8.5 The CONNECT Method
+	Frame types other than DATA or stream management frames
+	(RST_STREAM, WINDOW_UPDATE, and PRIORITY) MUST NOT be sent on a
+	connected stream and MUST be treated as a stream error (Section
+	5.4.2) if received.
+
+9113-8.5-3 MUST §8.5 The CONNECT Method
+	Correspondingly, a proxy MUST send a TCP segment with the RST bit
+	set if it detects an error with the stream or the HTTP/2
+	connection.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-8.7-1 MAY §8.7 Request Reliability
+	Requests that have not been processed have not failed; clients MAY
+	automatically retry them, even those with non-idempotent methods.
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-8.7-2 MUST_NOT §8.7 Request Reliability
+	A server MUST NOT indicate that a stream has not been processed
+	unless it can guarantee that fact.
+	n/a client: requirement on servers
+
+9113-8.7-3 MUST,MUST_NOT §8.7 Request Reliability
+	If frames that are on a stream are passed to the application layer
+	for any stream, then REFUSED_STREAM MUST NOT be used for that
+	stream, and a GOAWAY frame MUST include a stream identifier that
+	is greater than or equal to the given stream identifier.
+	n/a client: requirement on servers
+
+9113-9.1-1 SHOULD_NOT §9.1 Connection Management
+	Clients SHOULD NOT open more than one HTTP/2 connection to a given
+	host and port pair, where the host is derived from a URI, a
+	selected alternative service [ALT-SVC], or a configured proxy.
+	n/a server: requirement on clients
+
+9113-9.1-2 MAY,SHOULD §9.1 Connection Management
+	A client MAY open multiple connections to the same IP address and
+	TCP port using different Server Name Indication [TLS-EXT] values
+	or to provide different TLS client certificates but SHOULD avoid
+	creating multiple connections with the same configuration.
+	n/a server: requirement on clients
+
+9113-9.1-3 SHOULD §9.1 Connection Management
+	When either endpoint chooses to close the transport-layer TCP
+	connection, the terminating endpoint SHOULD first send a GOAWAY
+	(Section 6.8) frame so that both endpoints can reliably determine
+	whether previously sent frames have been processed and gracefully
+	complete or terminate any necessary remaining tasks.
+
+9113-9.1.1-1 MAY §9.1.1 Connection Reuse
+	Connections that are made to an origin server, either directly or
+	through a tunnel created using the CONNECT method (Section 8.5),
+	MAY be reused for requests with multiple different URI authority
+	components.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-9.1.1-2 MUST §9.1.1 Connection Reuse
+	The certificate presented by the server MUST satisfy any checks
+	that the client would perform when forming a new TLS connection
+	for the host in the URI.
+	n/a client: the Go client doesn't reuse connections across URI authorities
+	n/a server: requirement on clients
+
+9113-9.2-1 MUST §9.2 Use of TLS Features
+	Implementations of HTTP/2 MUST use TLS version 1.2 [TLS12] or
+	higher for HTTP/2 over TLS.
+
+9113-9.2-2 SHOULD §9.2 Use of TLS Features
+	The general TLS usage guidance in [TLSBCP] SHOULD be followed,
+	with some additional restrictions that are specific to HTTP/2.
+	n/a client: provided by crypto/tls, which the HTTP/2 implementation doesn't configure for this
+	n/a server: provided by crypto/tls, which the HTTP/2 implementation doesn't configure for this
+
+9113-9.2-3 MUST §9.2 Use of TLS Features
+	The TLS implementation MUST support the Server Name Indication
+	(SNI) [TLS-EXT] extension to TLS.
+	n/a server: provided by crypto/tls, which the HTTP/2 implementation doesn't configure for this
+
+9113-9.2-4 MUST §9.2 Use of TLS Features
+	If the server is identified by a domain name [DNS-TERMS], clients
+	MUST send the server_name TLS extension unless an alternative
+	mechanism to indicate the target host is used.
+	n/a server: requirement on clients
+
+9113-9.2.1-1 MAY §9.2.1 TLS 1.2 Features
+	An endpoint MAY immediately terminate an HTTP/2 connection that
+	does not meet these TLS requirements with a connection error
+	(Section 5.4.1) of type INADEQUATE_SECURITY.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-9.2.1-2 MUST §9.2.1 TLS 1.2 Features
+	A deployment of HTTP/2 over TLS 1.2 MUST disable compression.
+	n/a client: crypto/tls doesn't implement TLS compression
+	n/a server: crypto/tls doesn't implement TLS compression
+
+9113-9.2.1-3 MUST §9.2.1 TLS 1.2 Features
+	A deployment of HTTP/2 over TLS 1.2 MUST disable renegotiation.
+	n/a client: crypto/tls clients refuse renegotiation unless tls.Config.Renegotiation is set, which net/http doesn't do
+	n/a server: crypto/tls servers don't support renegotiation
+
+9113-9.2.1-4 MUST §9.2.1 TLS 1.2 Features
+	An endpoint MUST treat a TLS renegotiation as a connection error
+	(Section 5.4.1) of type PROTOCOL_ERROR.
+	n/a client: crypto/tls clients refuse renegotiation unless tls.Config.Renegotiation is set, which net/http doesn't do
+	n/a server: crypto/tls servers don't support renegotiation
+
+9113-9.2.1-5 MAY,MUST §9.2.1 TLS 1.2 Features
+	An endpoint MAY use renegotiation to provide confidentiality
+	protection for client credentials offered in the handshake, but
+	any renegotiation MUST occur prior to sending the connection
+	preface.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-9.2.1-6 SHOULD §9.2.1 TLS 1.2 Features
+	A server SHOULD request a client certificate if it sees a
+	renegotiation request immediately after establishing a connection.
+	n/a client: requirement on servers
+	n/a server: crypto/tls servers don't support renegotiation
+
+9113-9.2.1-7 MUST §9.2.1 TLS 1.2 Features
+	Implementations MUST support ephemeral key exchange sizes of at
+	least 2048 bits for cipher suites that use ephemeral finite field
+	Diffie- Hellman (DHE) (Section 8.1.2 of [TLS12]) and 224 bits for
+	cipher suites that use ephemeral elliptic curve Diffie-Hellman
+	(ECDHE) [RFC8422].
+	n/a client: crypto/tls has no finite field DHE, and its ECDHE groups are all at least 224 bits
+	n/a server: crypto/tls has no finite field DHE, and its ECDHE groups are all at least 224 bits
+
+9113-9.2.1-8 MUST §9.2.1 TLS 1.2 Features
+	Clients MUST accept DHE sizes of up to 4096 bits.
+	n/a client: crypto/tls has no finite field DHE
+	n/a server: requirement on clients
+
+9113-9.2.1-9 MAY §9.2.1 TLS 1.2 Features
+	Endpoints MAY treat negotiation of key sizes smaller than the
+	lower limits as a connection error (Section 5.4.1) of type
+	INADEQUATE_SECURITY.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-9.2.2-1 SHOULD_NOT §9.2.2 TLS 1.2 Cipher Suites
+	A deployment of HTTP/2 over TLS 1.2 SHOULD NOT use any of the
+	prohibited cipher suites listed in Appendix A.
+
+9113-9.2.2-2 MAY §9.2.2 TLS 1.2 Cipher Suites
+	Endpoints MAY choose to generate a connection error (Section
+	5.4.1) of type INADEQUATE_SECURITY if one of the prohibited cipher
+	suites is negotiated.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-9.2.2-3 MUST_NOT §9.2.2 TLS 1.2 Cipher Suites
+	Implementations MUST NOT generate this error in reaction to the
+	negotiation of a cipher suite that is not prohibited.
+
+9113-9.2.2-4 MUST §9.2.2 TLS 1.2 Cipher Suites
+	To avoid this problem, which causes TLS handshake failures,
+	deployments of HTTP/2 that use TLS 1.2 MUST support
+	TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 [TLS-ECDHE] with the P-256
+	elliptic curve [RFC8422].
+
+9113-9.2.3-1 MUST_NOT §9.2.3 TLS 1.3 Features
+	HTTP/2 servers MUST NOT send post-handshake TLS 1.3
+	CertificateRequest messages.
+	n/a client: requirement on servers
+	n/a server: crypto/tls servers don't implement TLS 1.3 post-handshake authentication
+
+9113-9.2.3-2 MUST §9.2.3 TLS 1.3 Features
+	HTTP/2 clients MUST treat a TLS post- handshake CertificateRequest
+	message as a connection error (Section 5.4.1) of type
+	PROTOCOL_ERROR.
+	n/a client: crypto/tls clients don't offer TLS 1.3 post-handshake authentication, so servers can't request it
+	n/a server: requirement on clients
+
+9113-9.2.3-3 MAY §9.2.3 TLS 1.3 Features
+	TLS early data MAY be used to send requests, provided that the
+	guidance in [RFC8470] is observed.
+	n/a client: crypto/tls doesn't implement TLS early data
+	n/a server: crypto/tls doesn't implement TLS early data
+
+9113-10.3-1 MUST §10.3 Intermediary Encapsulation Attacks
+	An intermediary that translates an HTTP/2 request or response MUST
+	validate fields according to the rules in Section 8.2 before
+	translating a message to another HTTP version.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-10.3-2 MUST §10.3 Intermediary Encapsulation Attacks
+	An intermediary that receives any fields that require removal
+	before forwarding (see Section 7.6.1 of [HTTP]) MUST remove or
+	replace those header fields when forwarding messages.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-10.4-1 MUST §10.4 Cacheability of Pushed Responses
+	Where multiple tenants share space on the same server, that server
+	MUST ensure that tenants are not able to push representations of
+	resources that they do not have authority over.
+	n/a client: requirement on clients
+	n/a server: the Go server doesn't implement server push
+
+9113-10.4-2 MUST_NOT §10.4 Cacheability of Pushed Responses
+	Pushed responses for which an origin server is not authoritative
+	(see Section 10.1) MUST NOT be used or cached.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-10.5-1 SHOULD §10.5 Denial-of-Service Considerations
+	A client that accepts server push SHOULD limit the number of
+	streams it allows to be in the "reserved (remote)" state.
+	n/a client: the Go client disables server push (SETTINGS_ENABLE_PUSH=0) and treats any PUSH_PROMISE as a connection error (9113-6.6-9)
+	n/a server: requirement on clients
+
+9113-10.5-2 SHOULD §10.5 Denial-of-Service Considerations
+	Implementations SHOULD track the use of these features and set
+	limits on their use.
+
+9113-10.5-3 MAY §10.5 Denial-of-Service Considerations
+	An endpoint MAY treat activity that is suspicious as a connection
+	error (Section 5.4.1) of type ENHANCE_YOUR_CALM.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-10.5.1-1 MAY §10.5.1 Limits on Field Block Size
+	This setting is only advisory, so endpoints MAY choose to send
+	field blocks that exceed this limit and risk the request or
+	response being treated as malformed.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9113-10.5.1-2 MUST §10.5.1 Limits on Field Block Size
+	The field block MUST be processed to ensure a consistent
+	connection state, unless the connection is closed.
+
+9113-10.6-1 MUST_NOT §10.6 Use of Compression
+	Implementations communicating on a secure channel MUST NOT
+	compress content that includes both confidential and attacker-
+	controlled data unless separate compression dictionaries are used
+	for each source of data.
+	n/a client: concerns content compression; HPACK's design addresses this (RFC 7541 §7)
+	n/a server: concerns content compression; HPACK's design addresses this (RFC 7541 §7)
+
+9113-10.6-2 MUST_NOT §10.6 Use of Compression
+	Compression MUST NOT be used if the source of data cannot be
+	reliably determined.
+	n/a client: concerns content compression; HPACK's design addresses this (RFC 7541 §7)
+	n/a server: concerns content compression; HPACK's design addresses this (RFC 7541 §7)
+
+9113-10.6-3 MUST_NOT §10.6 Use of Compression
+	Generic stream compression, such as that provided by TLS, MUST NOT
+	be used with HTTP/2 (see Section 9.2).
+	n/a client: crypto/tls doesn't implement TLS compression
+	n/a server: crypto/tls doesn't implement TLS compression
+
+9113-10.7-1 MAY,SHOULD §10.7 Use of Padding
+	Intermediaries SHOULD retain padding for DATA frames but MAY drop
+	padding for HEADERS and PUSH_PROMISE frames.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9113-A-1 MAY §A Prohibited TLS 1.2 Cipher Suites
+	An HTTP/2 implementation MAY treat the negotiation of any of the
+	following cipher suites with TLS 1.2 as a connection error
+	(Section 5.4.1) of type INADEQUATE_SECURITY:
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+7541-1.2-1 MAY,MUST,MUST_NOT,OPTIONAL,RECOMMENDED,REQUIRED,SHALL,SHALL_NOT,SHOULD,SHOULD_NOT §1.2 Conventions
+	The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL
+	NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL"
+	in this document are to be interpreted as described in RFC 2119
+	[RFC2119].
+	n/a client: BCP 14 boilerplate
+	n/a server: BCP 14 boilerplate
+
+7541-2.1-1 MUST §2.1 Header List Ordering
+	An encoder MUST order header field representations in the header
+	block according to their ordering in the original header list.
+
+7541-2.1-2 MUST §2.1 Header List Ordering
+	A decoder MUST order header fields in the decoded header list
+	according to their ordering in the header block.
+
+7541-2.3.2-1 MUST_NOT §2.3.2 Dynamic Table
+	Therefore, duplicate entries MUST NOT be treated as an error by a
+	decoder.
+
+7541-2.3.3-1 MUST §2.3.3 Index Address Space
+	Indices strictly greater than the sum of the lengths of both
+	tables MUST be treated as a decoding error.
+
+7541-3.2-1 MUST §3.2 Header Field Representation Processing
+	To ensure that the decoding will successfully produce a header
+	list, a decoder MUST obey the following rules.
+
+7541-4.2-1 MUST §4.2 Maximum Table Size
+	An encoder can choose to use less capacity than this maximum size
+	(see Section 6.3), but the chosen size MUST stay lower than or
+	equal to the maximum set by the protocol.
+
+7541-4.2-2 MUST §4.2 Maximum Table Size
+	This dynamic table size update MUST occur at the beginning of the
+	first header block following the change to the dynamic table size.
+
+7541-4.2-3 MUST §4.2 Maximum Table Size
+	In the case that this size is changed more than once in this
+	interval, the smallest maximum table size that occurs in that
+	interval MUST be signaled in a dynamic table size update.
+
+7541-5.1-1 MUST §5.1 Integer Representation
+	Integer encodings that exceed implementation limits -- in value or
+	octet length -- MUST be treated as decoding errors.
+
+7541-5.2-1 MUST §5.2 String Literal Representation
+	A padding strictly longer than 7 bits MUST be treated as a
+	decoding error.
+
+7541-5.2-2 MUST §5.2 String Literal Representation
+	A padding not corresponding to the most significant bits of the
+	code for the EOS symbol MUST be treated as a decoding error.
+
+7541-5.2-3 MUST §5.2 String Literal Representation
+	A Huffman-encoded string literal containing the EOS symbol MUST be
+	treated as a decoding error.
+
+7541-6.1-1 MUST §6.1 Indexed Header Field Representation
+	It MUST be treated as a decoding error if found in an indexed
+	header field representation.
+
+7541-6.2.3-1 MUST §6.2.3 Literal Header Field Never Indexed
+	Intermediaries MUST use the same representation for encoding this
+	header field.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+7541-6.2.3-2 MUST §6.2.3 Literal Header Field Never Indexed
+	When a header field is represented as a literal header field never
+	indexed, it MUST always be encoded with this specific literal
+	representation.
+	n/a client: concerns re-encoding fields received as never-indexed (intermediaries)
+	n/a server: concerns re-encoding fields received as never-indexed (intermediaries)
+
+7541-6.2.3-3 MUST §6.2.3 Literal Header Field Never Indexed
+	In particular, when a peer sends a header field that it received
+	represented as a literal header field never indexed, it MUST use
+	the same representation to forward this header field.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+7541-6.3-1 MUST §6.3 Dynamic Table Size Update
+	The new maximum size MUST be lower than or equal to the limit
+	determined by the protocol using HPACK.
+
+7541-6.3-2 MUST §6.3 Dynamic Table Size Update
+	A value that exceeds this limit MUST be treated as a decoding
+	error.
+
+7541-7.1.3-1 MUST_NOT §7.1.3 Never-Indexed Literals
+	An intermediary MUST NOT re-encode a value that uses the never-
+	indexed literal representation with another representation that
+	would index it.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+7541-7.1.3-2 MUST §7.1.3 Never-Indexed Literals
+	If HPACK is used for re-encoding, the never-indexed literal
+	representation MUST be used.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9218-2.1-1 MUST §2.1 Disabling RFC 7540 Stream Priorities
+	The value of SETTINGS_NO_RFC7540_PRIORITIES MUST be 0 or 1.
+
+9218-2.1-2 MUST §2.1 Disabling RFC 7540 Stream Priorities
+	Any value other than 0 or 1 MUST be treated as a connection error
+	(see Section 5.4.1 of [HTTP/2]) of type PROTOCOL_ERROR.
+
+9218-2.1-3 MUST §2.1 Disabling RFC 7540 Stream Priorities
+	If endpoints use SETTINGS_NO_RFC7540_PRIORITIES, they MUST send it
+	in the first SETTINGS frame.
+
+9218-2.1-4 MUST_NOT §2.1 Disabling RFC 7540 Stream Priorities
+	Senders MUST NOT change the SETTINGS_NO_RFC7540_PRIORITIES value
+	after the first SETTINGS frame.
+
+9218-2.1-5 MAY §2.1 Disabling RFC 7540 Stream Priorities
+	Receivers that detect a change MAY treat it as a connection error
+	of type PROTOCOL_ERROR.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9218-2.1-6 MUST §2.1 Disabling RFC 7540 Stream Priorities
+	A server that receives SETTINGS_NO_RFC7540_PRIORITIES with a value
+	of 1 MUST ignore HTTP/2 priority signals.
+	n/a client: requirement on servers
+	n/a server: ignoring priority signals is not observable
+
+9218-2.1.1-1 SHOULD §2.1.1 Advice when Using Extensible Priorities as the Alternative
+	Therefore, until the client receives the SETTINGS frame from the
+	server, the client SHOULD send both the HTTP/2 priority signals
+	and the signals of this prioritization scheme (see Sections 5 and
+	7.1).
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-2.1.1-2 SHOULD §2.1.1 Advice when Using Extensible Priorities as the Alternative
+	Once the client receives the first SETTINGS frame that contains
+	the SETTINGS_NO_RFC7540_PRIORITIES parameter with a value of 1, it
+	SHOULD stop sending the HTTP/2 priority signals.
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-2.1.1-3 SHOULD §2.1.1 Advice when Using Extensible Priorities as the Alternative
+	Similarly, if the client receives SETTINGS_NO_RFC7540_PRIORITIES
+	with a value of 0 or if the settings parameter was absent, it
+	SHOULD stop sending PRIORITY_UPDATE frames (Section 7.1), since
+	those frames are likely to be ignored.
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-2.1.1-4 MAY §2.1.1 Advice when Using Extensible Priorities as the Alternative
+	However, the client MAY continue sending the Priority header field
+	(Section 5), as it is an end-to-end signal that might be useful to
+	nodes behind the server that the client is directly connected to.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9218-4-1 SHOULD §4 Priority Parameters
+	When receiving an HTTP request that does not carry these priority
+	parameters, a server SHOULD act as if their default values were
+	specified.
+	n/a client: requirement on servers
+	n/a server: scheduling policy, not reliably observable by an interop test
+
+9218-4-2 MUST §4 Priority Parameters
+	Where the Dictionary is successfully parsed, this document places
+	the additional requirement that unknown priority parameters,
+	priority parameters with out-of-range values, or values of
+	unexpected types MUST be ignored.
+	n/a client: requirement on servers
+
+9218-4.1-1 SHOULD §4.1 Urgency
+	A client that fetches a document that likely consists of multiple
+	HTTP resources (e.g., HTML) SHOULD assign the default urgency
+	level to the main resource.
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-4.1-2 SHOULD_NOT §4.1 Urgency
+	This urgency level SHOULD NOT be used for fetching responses that
+	have any impact on user interaction.
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-7-1 MAY §7 The PRIORITY_UPDATE Frame
+	Failure to parse the Priority Field Value MAY be treated as a
+	connection error.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9218-7-2 MAY §7 The PRIORITY_UPDATE Frame
+	A client MAY send a PRIORITY_UPDATE frame before the stream that
+	it references is open (except for HTTP/2 push streams; see Section
+	7.1).
+	n/a client: permission (MAY); there is no behavior to require
+
+9218-7-3 SHOULD §7 The PRIORITY_UPDATE Frame
+	Servers SHOULD buffer the most recently received PRIORITY_UPDATE
+	frame and apply it once the referenced stream is opened.
+	n/a client: requirement on servers
+	n/a server: scheduling policy, not reliably observable by an interop test
+
+9218-7.1-1 MUST §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	The Stream Identifier field (see Section 5.1.1 of [HTTP/2]) in the
+	PRIORITY_UPDATE frame header MUST be zero (0x0).
+
+9218-7.1-2 MUST §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	Receiving a PRIORITY_UPDATE frame with a field of any other value
+	MUST be treated as a connection error of type PROTOCOL_ERROR.
+	n/a client: any PRIORITY_UPDATE received by a client is a connection error (9218-7.1-11)
+
+9218-7.1-3 SHOULD §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	When the PRIORITY_UPDATE frame applies to a request stream,
+	clients SHOULD provide a prioritized stream ID that refers to a
+	stream in the "open", "half-closed (local)", or "idle" state
+	(i.e., streams where data might still be received).
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-7.1-4 MUST_NOT §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	The number of streams that have been prioritized but remain in the
+	"idle" state plus the number of active streams (those in the
+	"open" state or in either of the "half-closed" states; see Section
+	5.1.2 of [HTTP/2]) MUST NOT exceed the value of the
+	SETTINGS_MAX_CONCURRENT_STREAMS parameter.
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-7.1-5 MUST §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	Servers that receive such a PRIORITY_UPDATE MUST respond with a
+	connection error of type PROTOCOL_ERROR.
+	n/a client: requirement on servers
+
+9218-7.1-6 SHOULD §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	When the PRIORITY_UPDATE frame applies to a push stream, clients
+	SHOULD provide a prioritized stream ID that refers to a stream in
+	the "reserved (remote)" or "half-closed (local)" state.
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-7.1-7 MUST_NOT §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	Clients MUST NOT provide a prioritized stream ID that refers to a
+	push stream in the "idle" state.
+	n/a client: the Go client doesn't send priority signals
+	n/a server: requirement on clients
+
+9218-7.1-8 MUST §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	Servers that receive a PRIORITY_UPDATE for a push stream in the
+	"idle" state MUST respond with a connection error of type
+	PROTOCOL_ERROR.
+	n/a client: requirement on servers
+	n/a server: the Go server doesn't implement server push
+
+9218-7.1-9 MUST §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	If a PRIORITY_UPDATE frame is received with a prioritized stream
+	ID of 0x0, the recipient MUST respond with a connection error of
+	type PROTOCOL_ERROR.
+	n/a client: any PRIORITY_UPDATE received by a client is a connection error (9218-7.1-11)
+
+9218-7.1-10 MUST_NOT §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	Servers MUST NOT send PRIORITY_UPDATE frames.
+	n/a client: requirement on servers
+
+9218-7.1-11 MUST §7.1 HTTP/2 PRIORITY_UPDATE Frame
+	If a client receives a PRIORITY_UPDATE frame, it MUST respond with
+	a connection error of type PROTOCOL_ERROR.
+	n/a server: requirement on clients
+
+9218-7.2-1 MUST §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	The PRIORITY_UPDATE frame MUST be sent on the client control
+	stream (see Section 6.2.1 of [HTTP/3]).
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-2 MUST §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	Receiving a PRIORITY_UPDATE frame on a stream other than the
+	client control stream MUST be treated as a connection error of
+	type H3_FRAME_UNEXPECTED.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-3 MUST §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	The request-stream variant of PRIORITY_UPDATE (type=0xF0700) MUST
+	reference a request stream.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-4 MUST §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	If a server receives a PRIORITY_UPDATE (type=0xF0700) for a stream
+	ID that is not a request stream, this MUST be treated as a
+	connection error of type H3_ID_ERROR.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-5 MUST §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	The stream ID MUST be within the client-initiated bidirectional
+	stream limit.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-6 SHOULD §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	If a server receives a PRIORITY_UPDATE (type=0xF0700) with a
+	stream ID that is beyond the stream limits, this SHOULD be treated
+	as a connection error of type H3_ID_ERROR.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-7 MUST §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	The push-stream variant of PRIORITY_UPDATE (type=0xF0701) MUST
+	reference a promised push stream.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-8 MUST §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	If a server receives a PRIORITY_UPDATE (type=0xF0701) with a push
+	ID that is greater than the maximum push ID or that has not yet
+	been promised, this MUST be treated as a connection error of type
+	H3_ID_ERROR.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-9 MUST_NOT §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	Servers MUST NOT send PRIORITY_UPDATE frames of either type.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-7.2-10 MUST §7.2 HTTP/3 PRIORITY_UPDATE Frame
+	If a client receives a PRIORITY_UPDATE frame, this MUST be treated
+	as a connection error of type H3_FRAME_UNEXPECTED.
+	n/a client: HTTP/3 only
+	n/a server: HTTP/3 only
+
+9218-9-1 MAY §9 Client Scheduling
+	A client MAY use priority values to make local processing or
+	scheduling choices about the requests it initiates.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+9218-10-1 RECOMMENDED §10 Server Scheduling
+	It is RECOMMENDED that, when possible, servers respect the urgency
+	parameter (Section 4.1), sending higher-urgency responses before
+	lower-urgency responses.
+	n/a client: requirement on servers
+
+9218-10-2 RECOMMENDED §10 Server Scheduling
+	It is RECOMMENDED that, when possible, servers respect the
+	incremental parameter (Section 4.2).
+	n/a client: requirement on servers
+	n/a server: scheduling policy, not reliably observable by an interop test
+
+9218-10-3 SHOULD §10 Server Scheduling
+	Non-incremental responses of the same urgency SHOULD be served by
+	prioritizing bandwidth allocation in ascending order of the stream
+	ID, which corresponds to the order in which clients make requests.
+	n/a client: requirement on servers
+
+9218-10-4 SHOULD §10 Server Scheduling
+	Incremental responses of the same urgency SHOULD be served by
+	sharing bandwidth among them.
+	n/a client: requirement on servers
+	n/a server: scheduling policy, not reliably observable by an interop test
+
+9218-10-5 RECOMMENDED §10 Server Scheduling
+	It is RECOMMENDED that servers avoid such starvation where
+	possible.
+	n/a client: requirement on servers
+	n/a server: scheduling policy, not reliably observable by an interop test
+
+9218-10.1-1 SHOULD §10.1 Intermediaries with Multiple Backend Connections
+	Similarly, servers SHOULD allocate some amount of bandwidths to
+	streams acting as tunnels.
+	n/a client: requirement on servers
+	n/a server: scheduling policy, not reliably observable by an interop test
+
+9218-12-1 SHOULD §12 Retransmission Scheduling
+	Section 13.3 of [QUIC] states the following: "Endpoints SHOULD
+	prioritize retransmission of data over sending new data, unless
+	priorities specified by the application indicate otherwise".
+	n/a client: QUIC only
+	n/a server: QUIC only
+
+9218-13.2-1 MAY §13.2 HTTP/1.x Back Ends
+	However, backend servers MAY still use client headers for request
+	scheduling.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+9218-13.2-2 SHOULD §13.2 HTTP/1.x Back Ends
+	Backend servers SHOULD only schedule based on client priority
+	information where that information can be scoped to individual end
+	clients.
+	n/a client: requirement on intermediaries; the Go client and server are endpoints
+	n/a server: requirement on intermediaries; the Go client and server are endpoints
+
+8441-3-1 MUST §3 The SETTINGS_ENABLE_CONNECT_PROTOCOL SETTINGS Parameter
+	The value of the parameter MUST be 0 or 1.
+
+8441-3-2 MAY §3 The SETTINGS_ENABLE_CONNECT_PROTOCOL SETTINGS Parameter
+	Upon receipt of SETTINGS_ENABLE_CONNECT_PROTOCOL with a value of
+	1, a client MAY use the Extended CONNECT as defined in this
+	document when creating new streams.
+	n/a client: net/http rejects the :protocol request field before connecting, so applications can't send extended CONNECT requests
+	n/a server: permission (MAY); there is no behavior to require
+
+8441-3-3 MUST_NOT §3 The SETTINGS_ENABLE_CONNECT_PROTOCOL SETTINGS Parameter
+	A sender MUST NOT send a SETTINGS_ENABLE_CONNECT_PROTOCOL
+	parameter with the value of 0 after previously sending a value of
+	1.
+
+8441-4-1 MAY §4 The Extended CONNECT Method
+	o  A new pseudo-header field :protocol MAY be included on request
+	HEADERS indicating the desired protocol to be spoken on the tunnel
+	created by CONNECT.
+	n/a client: permission (MAY); there is no behavior to require
+	n/a server: permission (MAY); there is no behavior to require
+
+8441-4-2 MUST §4 The Extended CONNECT Method
+	o  On requests that contain the :protocol pseudo-header field, the
+	:scheme and :path pseudo-header fields of the target URI (see
+	Section 5) MUST also be included.
+
+8441-4-3 MUST_NOT §4 The Extended CONNECT Method
+	In particular, the server MUST NOT create a tunnel to the host
+	indicated by the :authority as it would with a CONNECT method
+	request that was not modified by this extension.
+	n/a client: requirement on servers
+
+8441-5-1 MUST §5 Using Extended CONNECT to Bootstrap the WebSocket Protocol
+	The :protocol pseudo-header field MUST be included in the CONNECT
+	request, and it MUST have a value of "websocket" to initiate a
+	WebSocket connection on an HTTP/2 stream.
+	n/a client: requirement on WebSocket implementations
+	n/a server: requirement on WebSocket implementations
+
+8441-5-2 MUST §5 Using Extended CONNECT to Bootstrap the WebSocket Protocol
+	The scheme of the target URI (Section 5.1 of [RFC7230]) MUST be
+	"https" for "wss"-schemed WebSockets and "http" for "ws"-schemed
+	WebSockets.
+	n/a client: requirement on WebSocket implementations
+	n/a server: requirement on WebSocket implementations
+
+8441-5-3 MUST_NOT §5 Using Extended CONNECT to Bootstrap the WebSocket Protocol
+	They MUST NOT be included in the CONNECT request defined here.
+	n/a client: requirement on WebSocket implementations
+	n/a server: requirement on WebSocket implementations
+
+#
+# Descriptive requirements.
+#
+# The following requirements are stated without BCP 14 keywords, as
+# descriptions of the protocol, but still constrain implementations.
+# Their IDs have a "d" before the number, and their keyword is
+# DESCRIPTIVE. The text quotes the RFC.
+
+9113-3.4-d1 DESCRIPTIVE §3.4 HTTP/2 Connection Preface
+	The client sends the client connection preface as the first
+	application data octets of a connection.
+	n/a server: requirement on clients
+
+9113-3.4-d2 DESCRIPTIVE §3.4 HTTP/2 Connection Preface
+	To avoid unnecessary latency, clients are permitted to send
+	additional frames to the server immediately after sending the
+	client connection preface, without waiting to receive the server
+	connection preface.
+	n/a client: permission for clients (the Go client does send requests before receiving the server's preface; servers accepting that is 9113-3.4-d2 server)
+
+9113-4.3-d1 DESCRIPTIVE §4.3 Field Section Compression and Decompression
+	An endpoint receiving HEADERS, PUSH_PROMISE, or CONTINUATION
+	frames needs to reassemble field blocks and perform decompression
+	even if the frames are to be discarded.
+
+9113-4.3.1-d1 DESCRIPTIVE §4.3.1 Compression State
+	Any change to the maximum value set using
+	SETTINGS_HEADER_TABLE_SIZE takes effect when the endpoint
+	acknowledges settings (Section 6.5.3).
+
+9113-5.1-d1 DESCRIPTIVE §5.1 Stream States
+	An endpoint that sends a RST_STREAM frame on a stream that is in
+	the "open" or "half-closed (local)" state could receive any type
+	of frame. The peer might have sent or enqueued for sending these
+	frames before processing the RST_STREAM frame. This means updating
+	header compression state for HEADERS and PUSH_PROMISE frames.
+	Additionally, the content of DATA frames counts toward the
+	connection flow-control window.
+
+9113-5.1.1-d1 DESCRIPTIVE §5.1.1 Stream Identifiers
+	When a stream transitions out of the "idle" state, all streams in
+	the "idle" state that might have been opened by the peer with a
+	lower- valued stream identifier immediately transition to
+	"closed". That is, an endpoint may skip a stream identifier, with
+	the effect being that the skipped stream is immediately closed.
+	n/a client: servers open streams only by server push, which the Go client disables
+
+9113-5.2.1-d1 DESCRIPTIVE §5.2.1 Flow-Control Principles
+	Of the frames specified in this document, only DATA frames are
+	subject to flow control; all other frame types do not consume
+	space in the advertised flow-control window.
+
+9113-5.4.3-d1 DESCRIPTIVE §5.4.3 Connection Termination
+	If the TCP connection is closed or reset while streams remain in
+	the "open" or "half-closed" states, then the affected streams
+	cannot be automatically retried (see Section 8.7 for details).
+	n/a server: requirement on clients
+
+9113-6.1-d1 DESCRIPTIVE §6.1 DATA
+	The entire DATA frame payload is included in flow control,
+	including the Pad Length and Padding fields if present.
+
+9113-6.2-d1 DESCRIPTIVE §6.2 HEADERS
+	However, a HEADERS frame with the END_STREAM flag set can be
+	followed by CONTINUATION frames on the same stream.
+
+9113-6.3-d1 DESCRIPTIVE §6.3 PRIORITY
+	The PRIORITY frame can be sent on a stream in any state, including
+	"idle" or "closed".
+
+9113-6.8-d1 DESCRIPTIVE §6.8 GOAWAY
+	To deal with this case, the GOAWAY contains the stream identifier
+	of the last peer-initiated stream that was or might be processed
+	on the sending endpoint in this connection.
+
+9113-6.8-d2 DESCRIPTIVE §6.8 GOAWAY
+	If a connection terminates without a GOAWAY frame, the last stream
+	identifier is effectively the highest possible stream identifier.
+	On streams with lower- or equal-numbered identifiers that were not
+	closed completely prior to the connection being closed,
+	reattempting requests, transactions, or any protocol activity is
+	not possible, except for idempotent actions like HTTP GET, PUT, or
+	DELETE.
+	n/a server: requirement on clients
+
+9113-6.8-d3 DESCRIPTIVE §6.8 GOAWAY
+	Any protocol activity that uses higher-numbered streams can be
+	safely retried using a new connection.
+	n/a server: requirement on clients
+
+9113-6.9-d1 DESCRIPTIVE §6.9 WINDOW_UPDATE
+	WINDOW_UPDATE can be sent by a peer that has sent a frame with the
+	END_STREAM flag set. This means that a receiver could receive a
+	WINDOW_UPDATE frame on a stream in a "half-closed (remote)" or
+	"closed" state.
+
+9113-6.9-d2 DESCRIPTIVE §6.9 WINDOW_UPDATE
+	This is necessary even if the frame is in error. The sender counts
+	the frame toward the flow-control window, but if the receiver does
+	not, the flow-control window at the sender and receiver can become
+	different.
+
+9113-6.9.1-d1 DESCRIPTIVE §6.9.1 The Flow-Control Window
+	Receivers are advised to have mechanisms in place to avoid sending
+	WINDOW_UPDATE frames with very small increments; see Section
+	4.2.3.3 of [RFC1122].
+
+9113-6.9.2-d1 DESCRIPTIVE §6.9.2 Initial Flow-Control Window Size
+	A SETTINGS frame cannot alter the connection flow-control window.
+
+9113-6.10-d1 DESCRIPTIVE §6.10 CONTINUATION
+	Any number of CONTINUATION frames can be sent, as long as the
+	preceding frame is on the same stream and is a HEADERS,
+	PUSH_PROMISE, or CONTINUATION frame without the END_HEADERS flag
+	set.
+
+9113-8.1-d1 DESCRIPTIVE §8.1 HTTP Message Framing
+	An HTTP response is complete after the server sends -- or the
+	client receives -- a frame with the END_STREAM flag set (including
+	any CONTINUATION frames needed to complete a field block).
+
+9113-8.1.1-d1 DESCRIPTIVE §8.1.1 Malformed Messages
+	A request or response is also malformed if the value of a content-
+	length header field does not equal the sum of the DATA frame
+	payload lengths that form the content, unless the message is
+	defined as having no content.
+
+9113-8.1.1-d2 DESCRIPTIVE §8.1.1 Malformed Messages
+	For example, 204 or 304 responses contain no content, as does the
+	response to a HEAD request.
+
+9113-8.3-d1 DESCRIPTIVE §8.3 HTTP Control Data
+	Pseudo-header fields are not HTTP header fields.
+
+9113-8.3.1-d1 DESCRIPTIVE §8.3.1 Request Pseudo-Header Fields
+	":scheme" is not restricted to "http" and "https" schemed URIs.
+	n/a client: the Go client only makes http and https requests
+
+9113-8.3.1-d2 DESCRIPTIVE §8.3.1 Request Pseudo-Header Fields
+	All HTTP/2 requests implicitly have a protocol version of "2.0"
+	(see Section 6.2 of [HTTP]).
+
+9113-8.5-d1 DESCRIPTIVE §8.5 The CONNECT Method
+	After the initial HEADERS frame sent by each peer, all subsequent
+	DATA frames correspond to data sent on the TCP connection. The
+	END_STREAM flag on a DATA frame is treated as being equivalent to
+	the TCP FIN bit.
+
+9113-8.7-d1 DESCRIPTIVE §8.7 Request Reliability
+	*  The REFUSED_STREAM error code can be included in a RST_STREAM
+	frame to indicate that the stream is being closed prior to any
+	processing having occurred. Any request that was sent on the reset
+	stream can be safely retried.
+	n/a server: requirement on clients
+
+7541-4.1-d1 DESCRIPTIVE §4.1 Calculating Table Size
+	The size of an entry is the sum of its name's length in octets (as
+	defined in Section 5.2), its value's length in octets, and 32. The
+	size of an entry is calculated using the length of its name and
+	value without any Huffman encoding applied.
+
+7541-4.2-d1 DESCRIPTIVE §4.2 Maximum Table Size
+	The final maximum size is always signaled, resulting in at most
+	two dynamic table size updates.
+
+7541-4.3-d1 DESCRIPTIVE §4.3 Entry Eviction When Dynamic Table Size Changes
+	Whenever the maximum size for the dynamic table is reduced,
+	entries are evicted from the end of the dynamic table until the
+	size of the dynamic table is less than or equal to the maximum
+	size.
+
+7541-4.4-d1 DESCRIPTIVE §4.4 Entry Eviction When Adding New Entries
+	It is not an error to attempt to add an entry that is larger than
+	the maximum size; an attempt to add an entry larger than the
+	maximum size causes the table to be emptied of all existing
+	entries and results in an empty table.
+
+7541-4.4-d2 DESCRIPTIVE §4.4 Entry Eviction When Adding New Entries
+	A new entry can reference the name of an entry in the dynamic
+	table that will be evicted when adding this new entry into the
+	dynamic table.
+
+7541-5.1-d1 DESCRIPTIVE §5.1 Integer Representation
+	Otherwise, all the bits of the prefix are set to 1, and the value,
+	decreased by 2^N-1, is encoded using a list of one or more octets.
+
+8441-3-d1 DESCRIPTIVE §3 The SETTINGS_ENABLE_CONNECT_PROTOCOL SETTINGS Parameter
+	Receipt of this parameter by a server does not have any impact.
+	n/a client: requirement on clients
