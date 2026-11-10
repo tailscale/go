@@ -6,13 +6,11 @@ package types2_test
 
 import (
 	"internal/testenv"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	gcimporter "cmd/compile/internal/importer"
 	. "cmd/compile/internal/types2"
 )
 
@@ -54,16 +52,20 @@ func (*U) Z()            {}
 	if err := os.WriteFile(filepath.Join(dir, "methodorder.go"), []byte(src), 0666); err != nil {
 		t.Fatal(err)
 	}
-	cmd := testenv.Command(t, testenv.GoToolPath(t), "list", "-export", "-f={{.Export}}", ".")
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("go list: %v\n%s", err, out)
-	}
-	export := strings.TrimSpace(string(out))
 
-	lookup := func(path string) (io.ReadCloser, error) { return os.Open(export) }
-	pkg, err := gcimporter.Import(make(map[string]*Package), "methodorder", dir, lookup)
+	// NOTE(adonovan): I manually edited the cherrypick CL 855582 here
+	// to avoid a dependency on a not-yet-existing testimporter package.
+	// -vvv-
+	// Compile to export data, then import it, so that the method
+	// order is that recorded by the encoder (not by source type-checking).
+	cmd := testenv.Command(t, testenv.GoToolPath(t), "tool", "compile", "-p", "methodorder", "-importcfg", os.DevNull, "-o", "methodorder.o", "methodorder.go")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go tool compile failed: %v\n%s", err, out)
+	}
+	pkg, err := defaultImporter().(ImporterFrom).ImportFrom("./methodorder", dir, 0)
+	// -^^^-
+
 	if err != nil {
 		t.Fatal(err)
 	}
